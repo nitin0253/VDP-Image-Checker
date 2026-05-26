@@ -301,6 +301,8 @@ canvas{display:none}
 <canvas id="cv"></canvas>
 
 <script>
+
+
 const API = '/api/data';
 const VDP_IMAGE_API = '/api/vdp-image';
 const ENT_API = '/api/enterprises';
@@ -601,24 +603,25 @@ function renderRow(vin){
 function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
   const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
-  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error">⚠ Error</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo</span>'};
+  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'">⚠ Error</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo</span>'};
   let sh='—';
   if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
-  const la='data-lb="'+v.vin.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" style="cursor:pointer"';
+  const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
   const sc=v.spyneImg?'<div class="img-cell"><img class="img-thumb" src="'+v.spyneImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
   const vc=r.vdpImg?'<div class="img-cell"><img class="img-thumb" src="'+r.vdpImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+' style="font-size:12px;color:var(--t3)">'+(r.status==='pending'||r.status==='checking'?'⏳':'—')+'</div></div>';
   return '<tr data-vin="'+v.vin+'"><td><div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-family:var(--f-mono);color:var(--t3)">'+(i+1)+'</span><span style="font-family:var(--f-mono);font-size:10px;color:var(--t1)">'+(v.vin||'—')+'</span></div></td><td style="font-size:11px">'+(v.entName||'—')+'</td><td style="font-size:10px;color:var(--t3)">'+(v.teamName||'—')+'</td><td style="font-size:10px">'+([v.year,v.make,v.model].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+sc+'</td><td style="text-align:center">'+vc+'</td><td style="text-align:center">'+(bm[r.status]||bm.pending)+'</td><td>'+sh+'</td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+(v.vdpUrl?'<a class="link-pill" href="'+v.vdpUrl+'" target="_blank">VDP</a>':'')+(cu?'<a class="link-pill" href="'+cu+'" target="_blank">Console</a>':'')+'</div></td></tr>';
 }
 
+function openLbIdx(i){ if(_vins[i]) openLb(_vins[i].vin); }
+function openLbIdx(i){if(_vins[i])openLb(_vins[i].vin);}
 function openLb(vin){
   const v=_vins.find(x=>x.vin===vin);if(!v)return;
   const r=_results[vin]||{};
   document.getElementById('lb-title').textContent=vin+' — '+v.entName;
   document.getElementById('lb-spyne').innerHTML=v.spyneImg?'<img class="lb-img" src="'+v.spyneImg+'">'+'':'<div class="lb-img-missing">📷</div>';
   document.getElementById('lb-spyne-url').textContent=v.spyneImg||'—';
-  document.getElementById('lb-vdp').innerHTML=r.vdpImg?'<img class="lb-img" src="'+r.vdpImg+'">'+'':'<div class="lb-img-missing">'+(r.status==='pending'?'⏳ Not checked':r.status==='error'?'⚠ Failed':'—')+'</div>';
-  document.getElementById('lb-vdp-url').textContent=r.vdpImg||'—';
-  const lb={'match':'<span class="status-badge s-match" style="font-size:13px;padding:6px 16px">✓ Match ('+(r.score||'')+'% · '+(r.method==='url'?'URL identical':'pixel similarity')+')</span>','mismatch':'<span class="status-badge s-mismatch" style="font-size:13px;padding:6px 16px">✗ Differ ('+(r.score||'')+'%)</span>','pending':'<span class="status-badge s-pending" style="font-size:13px;padding:6px 16px">⏳ Not checked</span>','checking':'<span class="status-badge s-checking" style="font-size:13px;padding:6px 16px">Checking…</span>','novdp':'<span class="status-badge s-novdp" style="font-size:13px;padding:6px 16px">No VDP URL</span>','error':'<span class="status-badge s-error" style="font-size:13px;padding:6px 16px">⚠ Could not fetch — '+(r.method||'')+'</span>','placeholder':'<span class="status-badge" style="font-size:13px;padding:6px 16px;background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;border-radius:100px;font-family:var(--f-mono)">🖼 Images Coming Soon</span>'};
+  if(r.vdpImg){document.getElementById('lb-vdp').innerHTML='<img class="lb-img" src="'+r.vdpImg+'">';}
+  else if(r.status==='error'){document.getElementById('lb-vdp').innerHTML='<div class="lb-img-missing" style="flex-direction:column;gap:8px"><span style="font-size:20px">⚠</span><br><span style="font-size:10px;font-family:var(--f-mono);color:var(--t3);padding:0 12px;text-align:center;word-break:break-all">'+(r.method||'fetch failed')+'</span></div>';}
   document.getElementById('lb-status').innerHTML=lb[r.status]||'';
   document.getElementById('lb').classList.add('open');
 }
@@ -635,6 +638,8 @@ function toggleTheme(){
 (()=>{const s=localStorage.getItem('img-checker-theme');if(s){document.documentElement.setAttribute('data-theme',s);const t=s==='dark'?'🌙':'☀️';const b1=document.getElementById('tbtn');if(b1)b1.textContent=t;const b2=document.getElementById('sp-tbtn');if(b2)b2.textContent=t;}})();
 
 init();
+
+
 </script>
 </body>
 </html>
