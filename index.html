@@ -468,6 +468,48 @@ const VDP_IMAGE_API = '/api/vdp-image';
 let _vins = [], _results = {}, _filter = 'all', _running = false, _stopFlag = false;
 
 const ENT_API = '/api/enterprises';
+const ENT_CSV_DIRECT = 'https://metabase.spyne.ai/public/question/7d25d6cf-85c5-43e4-8033-ca09b9a399d8.csv';
+
+// Parse enterprise CSV directly in browser as fallback
+async function parseEnterprisesFromCSV() {
+  const r = await fetch(ENT_CSV_DIRECT, { signal: AbortSignal.timeout(60000) });
+  if (!r.ok) throw new Error(`CSV fetch failed: ${r.status}`);
+  const text = await r.text();
+  const lines = text.trim().split(/
+?
+/);
+  if (lines.length < 2) throw new Error('Empty CSV');
+  const hdrs = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim());
+  const iEid  = hdrs.indexOf('enterpriseId');
+  const iEName= hdrs.indexOf('enterprise_name');
+  const iTid  = hdrs.indexOf('teamId');
+  const iTName= hdrs.indexOf('team_name');
+  const iSeg  = hdrs.indexOf('customer_segment');
+  const entMap = {};
+  lines.slice(1).forEach(line => {
+    if (!line.trim()) return;
+    const vals = line.split(',').map(v => v.replace(/^"|"$/g,'').trim());
+    const eid   = vals[iEid]  || '';
+    const eName = vals[iEName]|| eid || 'Unknown';
+    const tid   = vals[iTid]  || '';
+    const tName = vals[iTName]|| tid || 'Unknown';
+    const seg   = iSeg >= 0 ? (vals[iSeg]||'') : '';
+    if (!entMap[eName]) entMap[eName] = { name: eName, eid, segment: seg, teams: {}, count: 0 };
+    entMap[eName].count++;
+    if (tName) {
+      if (!entMap[eName].teams[tName]) entMap[eName].teams[tName] = { tid, count: 0 };
+      entMap[eName].teams[tName].count++;
+    }
+  });
+  const enterprises = Object.values(entMap)
+    .sort((a,b) => b.count - a.count)
+    .map(e => ({
+      name: e.name, eid: e.eid, segment: e.segment, count: e.count,
+      teams: Object.entries(e.teams).sort((a,b)=>b[1].count-a[1].count)
+               .map(([name,t])=>({ name, tid: t.tid, count: t.count }))
+    }));
+  return { enterprises, totalVins: lines.length - 1 };
+}
 
 // ── INIT — page shows instantly, no API calls ────────────────────
 function init() {
@@ -484,13 +526,27 @@ async function fetchEnterprises() {
   const t0 = Date.now();
   const timerInterval = setInterval(() => {
     const s = ((Date.now() - t0) / 1000).toFixed(0);
-    subEl.textContent = `Fetching enterprise list… ${s}s`;
+    subEl.textContent = `Fetching enterprise list… ${s}s (Metabase can take 20-60s on first load)`;
   }, 500);
 
   try {
-    const r = await fetch(ENT_API);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const j = await r.json();
+    // 65s timeout — matches Vercel's max function duration
+    let j;
+    try {
+      // Try server-side API first (uses cache if warm)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s for cached response
+      const r = await fetch(ENT_API, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        j = await r.json();
+        if (j.error || !j.enterprises?.length) throw new Error('bad response');
+      } else throw new Error(`HTTP ${r.status}`);
+    } catch (apiErr) {
+      // Fallback: fetch Metabase CSV directly from browser
+      subEl.textContent = 'API unavailable, fetching directly from Metabase…';
+      j = await parseEnterprisesFromCSV();
+    }
     if (!j.enterprises?.length) throw new Error('No enterprises found');
 
     clearInterval(timerInterval);
@@ -511,8 +567,12 @@ async function fetchEnterprises() {
   } catch (e) {
     clearInterval(timerInterval);
     btn.disabled = false;
+    btn.style.background = '';
     btn.innerHTML = '↻ Retry';
-    subEl.innerHTML = `<span style="color:var(--red)">Failed: ${e.message}</span>`;
+    const errMsg = e.name === 'AbortError' ? 'Timed out after 65s — Metabase is slow. Click retry or check /api/enterprises in browser.' : (e.message || 'Unknown error');
+    subEl.innerHTML = `<span style="color:var(--red);font-size:11px">${errMsg}</span>
+      <br><a href="/api/enterprises" target="_blank" style="color:var(--accent);font-size:10px;font-family:var(--f-mono)">→ test /api/enterprises directly</a>`;
+    console.error('fetchEnterprises failed:', e);
   }
 }
 
