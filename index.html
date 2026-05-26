@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>VDP Image Checker · Spyne</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--f-mono:'JetBrains Mono',monospace;}
+[data-theme="dark"]{--bg:#1a1a1a;--panel:#1f1f1f;--card:#252525;--card2:#2e2e2e;--rim:#333;--rim2:#404040;--t1:#fff;--t2:#ccc;--t3:#888;--accent:#5c7cfa;--ag:rgba(92,124,250,.12);--ag2:rgba(92,124,250,.06);--red:#f0516e;--amber:#f5a623;--green:#00c896;--purple:#b48fff;--sh:0 1px 2px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);}
+[data-theme="light"]{--bg:#f4f5fa;--panel:#eef0f8;--card:#fff;--card2:#f7f8fd;--rim:#dde1f0;--rim2:#c8ceea;--t1:#090c1a;--t2:#3d4568;--t3:#9097be;--accent:#3a5cf0;--ag:rgba(58,92,240,.1);--ag2:rgba(58,92,240,.05);--red:#d92f4e;--amber:#c07a00;--green:#00996d;--purple:#7c3aed;--sh:0 1px 3px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.06);}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;-webkit-font-smoothing:antialiased;font-size:14px}
+button{font-family:'Inter',sans-serif;cursor:pointer;border:none;background:none}
+a{color:inherit;text-decoration:none}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--rim);background:var(--panel);gap:16px;flex-wrap:wrap}
+.hdr-left{display:flex;align-items:center;gap:14px}
+.logo{height:32px;border-radius:6px}
+.hdr-title{font-size:16px;font-weight:700;letter-spacing:-.3px}
+.hdr-sub{font-size:9px;font-family:var(--f-mono);color:var(--t3);letter-spacing:1.5px;margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;transition:all .15s;cursor:pointer}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.85}
+.btn-ghost{background:var(--card);border:1px solid var(--rim);color:var(--t2)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.icon-btn{width:32px;height:32px;border-radius:7px;border:1px solid var(--rim);background:var(--card);color:var(--t2);display:grid;place-items:center;font-size:13px;transition:all .15s}
+.icon-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── SELECTION PAGE ──────────────────────────────── */
+#sel-page{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+#sel-page.hidden{display:none}
+.sp-logo{display:flex;align-items:center;gap:12px;margin-bottom:48px}
+.sp-logo-img{height:36px;border-radius:8px}
+.sp-logo-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.sp-logo-sub{font-size:10px;font-family:var(--f-mono);color:var(--t3);letter-spacing:1.5px;margin-top:2px}
+.sp-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:36px 40px;width:100%;max-width:560px;box-shadow:0 4px 32px rgba(0,0,0,.4)}
+.sp-heading{font-size:18px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.sp-sub{font-size:12px;color:var(--t3);margin-bottom:32px;font-family:var(--f-mono)}
+.sp-field{margin-bottom:20px}
+.sp-field-label{font-size:10px;font-family:var(--f-mono);color:var(--t3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sp-field-label span{background:var(--accent);color:#fff;font-size:8px;border-radius:3px;padding:1px 5px}
+/* reuse ms-* styles from selector bar — same dropdown component */
+.sp-ms-wrap{position:relative;width:100%}
+.sp-ms-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;border-radius:11px;background:var(--card2);border:1px solid var(--rim2);cursor:pointer;transition:all .15s;user-select:none}
+.sp-ms-trigger:hover,.sp-ms-trigger.open{border-color:var(--accent);box-shadow:0 0 0 3px rgba(92,124,250,.15)}
+.sp-ms-trigger.disabled{opacity:.4;pointer-events:none}
+.sp-ms-txt{font-size:13px;color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-ms-txt.sel{color:var(--t1);font-weight:600}
+.sp-ms-chev{flex-shrink:0;color:var(--t3);transition:transform .2s}
+.sp-ms-trigger.open .sp-ms-chev{transform:rotate(180deg)}
+.sp-ms-dd{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--card);border:1px solid var(--rim2);border-radius:14px;z-index:2000;box-shadow:0 20px 60px rgba(0,0,0,.6);opacity:0;transform:translateY(-8px) scale(.97);pointer-events:none;transition:all .18s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.sp-ms-dd.open{opacity:1;transform:none;pointer-events:auto}
+.sp-ms-search{padding:12px 14px;border-bottom:1px solid var(--rim)}
+.sp-ms-search input{width:100%;background:var(--card2);border:1px solid var(--rim);border-radius:8px;padding:8px 12px;font-size:13px;font-family:var(--f-mono);color:var(--t1);outline:none;transition:border-color .15s}
+.sp-ms-search input:focus{border-color:var(--accent)}
+.sp-ms-list{max-height:220px;overflow-y:auto;padding:6px}
+.sp-ms-list::-webkit-scrollbar{width:3px}
+.sp-ms-list::-webkit-scrollbar-thumb{background:var(--rim2);border-radius:2px}
+.sp-ms-opt{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--t2);transition:background .1s}
+.sp-ms-opt:hover{background:var(--card2);color:var(--t1)}
+.sp-ms-opt.on{color:var(--accent)}
+.sp-ms-opt.on .sp-ms-box{background:var(--accent);border-color:var(--accent)}
+.sp-ms-opt.on .sp-ms-box::after{content:'✓';font-size:9px;color:#fff}
+.sp-ms-box{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s}
+.sp-ms-opt-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-ms-opt-cnt{font-family:var(--f-mono);font-size:10px;color:var(--t3);flex-shrink:0}
+.sp-ms-foot{padding:10px 14px;border-top:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between}
+.sp-ms-sel-cnt{font-size:11px;font-family:var(--f-mono);color:var(--t3)}
+.sp-ms-clear{font-size:11px;font-family:var(--f-mono);color:var(--accent);cursor:pointer;padding:3px 8px;border-radius:5px}
+.sp-ms-clear:hover{background:var(--ag)}
+.sp-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:0}
+.sp-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;background:var(--ag);border:1px solid rgba(92,124,250,.25);font-size:11px;font-family:var(--f-mono);color:var(--accent)}
+.sp-chip-x{cursor:pointer;opacity:.7;font-size:10px;transition:opacity .12s}
+.sp-chip-x:hover{opacity:1}
+.sp-divider{height:1px;background:var(--rim);margin:24px 0}
+.sp-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sp-all-link{font-size:12px;font-family:var(--f-mono);color:var(--t3);cursor:pointer;transition:color .14s}
+.sp-all-link:hover{color:var(--accent)}
+.sp-go-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:11px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;border:none;flex-shrink:0}
+.sp-go-btn:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 8px 24px rgba(92,124,250,.4)}
+.sp-go-btn:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+.sp-vin-preview{font-size:11px;font-family:var(--f-mono);color:var(--t3);margin-top:6px}
+.sp-fetch-spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .6s linear infinite;flex-shrink:0}
+
+/* LOADING PAGE */
+#load-page{position:fixed;inset:0;background:var(--bg);z-index:999;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+#load-page.show{display:flex}
+.lp-ring{width:52px;height:52px;border-radius:50%;border:2.5px solid var(--rim);border-top-color:var(--accent);animation:spin .6s linear infinite;box-shadow:0 0 24px rgba(92,124,250,.25)}
+.lp-title{font-size:14px;font-weight:700;letter-spacing:-.2px}
+.lp-sub{font-size:11px;font-family:var(--f-mono);color:var(--t3);letter-spacing:.5px}
+.lp-bar-wrap{width:280px;height:3px;background:var(--rim);border-radius:2px;overflow:hidden}
+.lp-bar{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width .4s ease}
+
+/* SELECTOR BAR */
+.sel-bar{display:none;align-items:center;gap:10px;padding:12px 28px;background:var(--panel);border-bottom:1px solid var(--rim);flex-wrap:wrap}
+.sel-bar.show{display:flex}
+.sel-lbl{font-size:10px;font-family:var(--f-mono);color:var(--t3);letter-spacing:.8px;text-transform:uppercase;white-space:nowrap}
+.ms-wrap{position:relative;min-width:200px;max-width:320px;flex:1}
+.ms-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;border-radius:9px;background:var(--card2);border:1px solid var(--rim2);cursor:pointer;transition:all .15s;user-select:none}
+.ms-trigger:hover,.ms-trigger.open{border-color:var(--accent);box-shadow:0 0 0 2px rgba(92,124,250,.15)}
+.ms-txt{font-size:12px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.ms-txt.sel{color:var(--t1);font-weight:600}
+.ms-chev{flex-shrink:0;color:var(--t3);transition:transform .2s}
+.ms-trigger.open .ms-chev{transform:rotate(180deg)}
+.ms-dd{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--card);border:1px solid var(--rim2);border-radius:12px;z-index:400;box-shadow:0 16px 48px rgba(0,0,0,.5);opacity:0;transform:translateY(-6px) scale(.98);pointer-events:none;transition:all .15s cubic-bezier(.4,0,.2,1);overflow:hidden;min-width:260px}
+.ms-dd.open{opacity:1;transform:none;pointer-events:auto}
+.ms-dd-search{padding:10px 12px;border-bottom:1px solid var(--rim)}
+.ms-dd-search input{width:100%;background:var(--card2);border:1px solid var(--rim);border-radius:7px;padding:6px 10px;font-size:12px;font-family:var(--f-mono);color:var(--t1);outline:none;transition:border-color .15s}
+.ms-dd-search input:focus{border-color:var(--accent)}
+.ms-dd-list{max-height:240px;overflow-y:auto;padding:4px}
+.ms-dd-list::-webkit-scrollbar{width:3px}
+.ms-dd-list::-webkit-scrollbar-thumb{background:var(--rim2);border-radius:2px}
+.ms-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:12px;color:var(--t2);transition:background .1s}
+.ms-opt:hover{background:var(--card2);color:var(--t1)}
+.ms-opt.on .ms-box{background:var(--accent);border-color:var(--accent)}
+.ms-opt.on .ms-box::after{content:'✓';font-size:8px;color:#fff}
+.ms-opt.on{color:var(--accent)}
+.ms-box{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s}
+.ms-opt-lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms-opt-cnt{font-family:var(--f-mono);font-size:9px;color:var(--t3);flex-shrink:0}
+.ms-dd-foot{padding:8px 12px;border-top:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between}
+.ms-dd-sel-cnt{font-size:10px;font-family:var(--f-mono);color:var(--t3)}
+.ms-dd-clear{font-size:10px;font-family:var(--f-mono);color:var(--accent);cursor:pointer;padding:2px 6px;border-radius:4px}
+.ms-dd-clear:hover{background:var(--ag)}
+.sel-divider{width:1px;height:26px;background:var(--rim);flex-shrink:0}
+.sel-load-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:9px;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;border:none}
+.sel-load-btn:hover{opacity:.85;transform:translateY(-1px)}
+.sel-reset{font-size:11px;font-family:var(--f-mono);color:var(--t3);cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .14s;white-space:nowrap;display:none}
+.sel-reset:hover{color:var(--red)}
+.sel-count{font-size:10px;font-family:var(--f-mono);color:var(--t3);margin-left:auto;white-space:nowrap}
+
+/* STATS BAR */
+.stats-bar{display:flex;align-items:center;gap:6px;padding:14px 28px;background:var(--panel);border-bottom:1px solid var(--rim);flex-wrap:wrap}
+.stat-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:100px;font-size:11px;font-family:var(--f-mono);border:1px solid var(--rim);background:var(--card);color:var(--t2)}
+.stat-pill b{font-weight:700}
+.stat-match{border-color:rgba(0,200,150,.3);color:var(--green);background:rgba(0,200,150,.08)}
+.stat-mismatch{border-color:rgba(240,81,110,.3);color:var(--red);background:rgba(240,81,110,.08)}
+.stat-pending{border-color:rgba(245,166,35,.3);color:var(--amber);background:rgba(245,166,35,.08)}
+.stat-error{border-color:rgba(180,143,255,.3);color:var(--purple);background:rgba(180,143,255,.08)}
+.stat-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.progress-wrap{flex:1;min-width:200px;height:4px;background:var(--rim);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+.progress-txt{font-size:10px;font-family:var(--f-mono);color:var(--t3);white-space:nowrap}
+
+/* FILTERS */
+.filter-bar{display:flex;align-items:center;gap:8px;padding:12px 28px;border-bottom:1px solid var(--rim);flex-wrap:wrap}
+.filter-label{font-size:11px;font-family:var(--f-mono);color:var(--t3);letter-spacing:.5px}
+.fchip{padding:4px 12px;border-radius:100px;font-size:11px;font-family:var(--f-mono);border:1px solid var(--rim);background:var(--card);color:var(--t2);cursor:pointer;transition:all .14s}
+.fchip:hover{border-color:var(--accent);color:var(--accent)}
+.fchip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.search-wrap{margin-left:auto;position:relative}
+.search-input{padding:6px 10px 6px 30px;border-radius:8px;border:1px solid var(--rim);background:var(--card);color:var(--t1);font-size:12px;font-family:var(--f-mono);width:220px;transition:border-color .15s;outline:none}
+.search-input:focus{border-color:var(--accent)}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--t3);font-size:12px;pointer-events:none}
+
+/* PAGE */
+.page{max-width:1540px;margin:0 auto;padding:20px 28px 80px}
+
+/* TABLE */
+.tbl-shell{background:var(--card);border:1px solid var(--rim);border-radius:16px;overflow:hidden;box-shadow:var(--sh)}
+.tbl-scroll{overflow-y:auto;max-height:calc(100vh - 280px)}
+.tbl-scroll::-webkit-scrollbar{width:3px}
+.tbl-scroll::-webkit-scrollbar-thumb{background:var(--rim2);border-radius:2px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{position:sticky;top:0;z-index:3}
+thead tr{background:var(--card2);border-bottom:1px solid var(--rim2)}
+th{padding:10px 12px;text-align:left;font-family:var(--f-mono);font-size:10px;font-weight:500;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;white-space:nowrap}
+th:first-child{padding-left:16px}
+th:last-child{padding-right:16px}
+tbody tr{border-bottom:1px solid var(--rim);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--card2)}
+td{padding:9px 12px;color:var(--t2);vertical-align:middle}
+td:first-child{padding-left:16px}
+td:last-child{padding-right:16px}
+
+/* IMAGE CELLS */
+.img-cell{display:flex;align-items:center;gap:8px}
+.img-thumb{width:64px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--rim);flex-shrink:0;background:var(--card2);cursor:pointer;transition:transform .15s}
+.img-thumb:hover{transform:scale(1.06)}
+.img-thumb.loading{animation:skel 1.4s infinite}
+.img-missing{width:64px;height:46px;border-radius:6px;border:1px dashed var(--rim2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--t3);background:var(--card2)}
+@keyframes skel{0%{opacity:.5}50%{opacity:1}100%{opacity:.5}}
+
+/* STATUS BADGE */
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600;letter-spacing:.3px;white-space:nowrap}
+.s-match{background:rgba(0,200,150,.12);border:1px solid rgba(0,200,150,.3);color:var(--green)}
+.s-mismatch{background:rgba(240,81,110,.1);border:1px solid rgba(240,81,110,.3);color:var(--red)}
+.s-pending{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);color:var(--amber)}
+.s-checking{background:var(--ag2);border:1px solid rgba(92,124,250,.25);color:var(--accent)}
+.s-novdp{background:var(--card2);border:1px solid var(--rim);color:var(--t3)}
+.s-error{background:rgba(180,143,255,.1);border:1px solid rgba(180,143,255,.3);color:var(--purple)}
+.s-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.s-spin{width:10px;height:10px;border-radius:50%;border:1.5px solid currentColor;border-top-color:transparent;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* SCORE BAR */
+.score-bar{display:flex;align-items:center;gap:6px}
+.score-track{width:60px;height:4px;background:var(--rim);border-radius:2px;overflow:hidden}
+.score-fill{height:100%;border-radius:2px}
+
+/* LINK PILL */
+.link-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--f-mono);border:1px solid var(--rim);color:var(--t3);background:var(--card2);transition:all .14s;cursor:pointer;white-space:nowrap}
+.link-pill:hover{border-color:var(--accent);color:var(--accent)}
+
+/* LIGHTBOX */
+.lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.lb-overlay.open{display:flex}
+.lb-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:24px;max-width:900px;width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;position:relative}
+.lb-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:7px;border:1px solid var(--rim);background:var(--card2);color:var(--t2);display:grid;place-items:center;font-size:14px;cursor:pointer}
+.lb-close:hover{border-color:var(--red);color:var(--red)}
+.lb-title{font-size:14px;font-weight:700;margin-bottom:16px;padding-right:36px}
+.lb-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.lb-side{display:flex;flex-direction:column;gap:8px}
+.lb-side-label{font-size:10px;font-family:var(--f-mono);color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
+.lb-img{width:100%;aspect-ratio:4/3;object-fit:contain;border-radius:10px;border:1px solid var(--rim);background:var(--card2)}
+.lb-img-missing{width:100%;aspect-ratio:4/3;border-radius:10px;border:1px dashed var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--t3)}
+.lb-status{margin-top:12px;text-align:center}
+.lb-url{font-size:9px;font-family:var(--f-mono);color:var(--t3);word-break:break-all;margin-top:4px;padding:6px 8px;background:var(--card2);border-radius:6px;border:1px solid var(--rim)}
+
+/* LOADING */
+#init-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px}
+.load-ring{width:44px;height:44px;border-radius:50%;border:2px solid var(--rim);border-top-color:var(--accent);animation:spin .6s linear infinite}
+.load-txt{font-size:11px;font-family:var(--f-mono);color:var(--t3);letter-spacing:1px}
+
+/* EMPTY */
+.empty{text-align:center;padding:60px 20px;font-family:var(--f-mono);font-size:11px;color:var(--t3)}
+
+canvas{display:none}
+</style>
+</head>
+<body>
+
+<!-- SELECTION PAGE -->
+<div id="sel-page">
+  <div class="sp-logo">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40'%3E%3Crect width='120' height='40' rx='8' fill='%235c7cfa'/%3E%3Ctext x='60' y='26' text-anchor='middle' fill='white' font-family='Inter,sans-serif' font-weight='800' font-size='14'%3ESPYNE%3C/text%3E%3C/svg%3E" class="sp-logo-img"/>
+    <div>
+      <div class="sp-logo-title">VDP Image Checker</div>
+      <div class="sp-logo-sub">SPYNE vs VDP · FIRST IMAGE QC</div>
+    </div>
+    <button class="icon-btn" onclick="toggleTheme()" id="sp-tbtn" style="margin-left:12px" title="Toggle theme">🌙</button>
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-heading">Select Enterprise & Team</div>
+    <div class="sp-sub" id="sp-sub-txt"></div>
+
+    <!-- Enterprise -->
+    <div id="sp-fetch-wrap" style="margin-bottom:24px;display:flex;flex-direction:column;gap:10px">
+      <button id="sp-fetch-btn" onclick="fetchEnterprises()" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .15s;align-self:flex-start">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Fetch Enterprise List
+      </button>
+    </div>
+
+    <div class="sp-field">
+      <div class="sp-field-label">Enterprise <span>Required</span></div>
+      <div class="sp-ms-wrap">
+        <div class="sp-ms-trigger disabled" id="sp-ent-trig" onclick="spMsToggle('ent')">
+          <span class="sp-ms-txt" id="sp-ent-txt">Loading…</span>
+          <svg class="sp-ms-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="sp-ms-dd" id="sp-ent-dd">
+          <div class="sp-ms-search"><input type="text" id="sp-ent-q" placeholder="Search enterprises…" oninput="spMsBuild('ent')" autocomplete="off"/></div>
+          <div class="sp-ms-list" id="sp-ent-list"></div>
+          <div class="sp-ms-foot">
+            <span class="sp-ms-sel-cnt" id="sp-ent-cnt">None selected</span>
+            <span class="sp-ms-clear" onclick="spMsClear('ent')">Clear all</span>
+          </div>
+        </div>
+      </div>
+      <div class="sp-chips" id="sp-ent-chips"></div>
+    </div>
+
+    <!-- Team -->
+    <div class="sp-field">
+      <div class="sp-field-label">Team <span style="background:var(--card2);color:var(--t3);border:1px solid var(--rim)">Optional</span></div>
+      <div class="sp-ms-wrap">
+        <div class="sp-ms-trigger disabled" id="sp-team-trig" onclick="spMsToggle('team')">
+          <span class="sp-ms-txt" id="sp-team-txt">Select enterprise first</span>
+          <svg class="sp-ms-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="sp-ms-dd" id="sp-team-dd">
+          <div class="sp-ms-search"><input type="text" id="sp-team-q" placeholder="Search teams…" oninput="spMsBuild('team')" autocomplete="off"/></div>
+          <div class="sp-ms-list" id="sp-team-list"></div>
+          <div class="sp-ms-foot">
+            <span class="sp-ms-sel-cnt" id="sp-team-cnt">None selected</span>
+            <span class="sp-ms-clear" onclick="spMsClear('team')">Clear all</span>
+          </div>
+        </div>
+      </div>
+      <div class="sp-chips" id="sp-team-chips"></div>
+    </div>
+
+    <div class="sp-divider"></div>
+
+    <div class="sp-actions">
+      <span class="sp-all-link" onclick="spGoAll()">Load all VINs without filter</span>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <button class="sp-go-btn" id="sp-go-btn" disabled onclick="spGo()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Load VINs
+        </button>
+        <span class="sp-vin-preview" id="sp-vin-preview"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING TRANSITION PAGE -->
+<div id="load-page">
+  <div class="lp-ring"></div>
+  <div class="lp-title" id="lp-title">Loading VIN data…</div>
+  <div class="lp-sub" id="lp-sub"></div>
+  <div class="lp-bar-wrap"><div class="lp-bar" id="lp-bar"></div></div>
+</div>
+
+<!-- HEADER -->
+<header class="hdr" id="main-hdr" style="display:none">
+  <div class="hdr-left">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40'%3E%3Crect width='120' height='40' rx='8' fill='%235c7cfa'/%3E%3Ctext x='60' y='26' text-anchor='middle' fill='white' font-family='Inter,sans-serif' font-weight='800' font-size='14'%3ESPYNE%3C/text%3E%3C/svg%3E" class="logo"/>
+    <div>
+      <div class="hdr-title">VDP Image Checker</div>
+      <div class="hdr-sub">SPYNE vs VDP · FIRST IMAGE QC</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span id="sync-time" style="font-size:11px;font-family:var(--f-mono);color:var(--t3)"></span>
+    <button class="icon-btn" onclick="toggleTheme()" id="tbtn" title="Toggle theme">🌙</button>
+    <button class="btn btn-ghost" onclick="stopChecking()" id="stop-btn" style="display:none">⏹ Stop</button>
+    <button class="btn btn-primary" onclick="startCheck()" id="run-btn">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Run Check
+    </button>
+  </div>
+</header>
+
+<!-- SELECTOR BAR -->
+<div class="sel-bar" id="sel-bar" style="display:none!important">
+  <span class="sel-lbl">Select</span>
+
+  <div class="ms-wrap" id="ms-ent-wrap">
+    <div class="ms-trigger" id="ms-ent-trig" onclick="msToggle('ent')">
+      <span class="ms-txt" id="ms-ent-txt">All Enterprises</span>
+      <svg class="ms-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="ms-dd" id="ms-ent-dd">
+      <div class="ms-dd-search"><input type="text" id="ms-ent-q" placeholder="Search enterprises…" oninput="msBuild('ent')" autocomplete="off"/></div>
+      <div class="ms-dd-list" id="ms-ent-list"></div>
+      <div class="ms-dd-foot">
+        <span class="ms-dd-sel-cnt" id="ms-ent-cnt">None selected</span>
+        <span class="ms-dd-clear" onclick="msClear('ent')">Clear</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sel-divider"></div>
+
+  <div class="ms-wrap" id="ms-team-wrap">
+    <div class="ms-trigger" id="ms-team-trig" onclick="msToggle('team')">
+      <span class="ms-txt" id="ms-team-txt">All Teams</span>
+      <svg class="ms-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="ms-dd" id="ms-team-dd">
+      <div class="ms-dd-search"><input type="text" id="ms-team-q" placeholder="Search teams…" oninput="msBuild('team')" autocomplete="off"/></div>
+      <div class="ms-dd-list" id="ms-team-list"></div>
+      <div class="ms-dd-foot">
+        <span class="ms-dd-sel-cnt" id="ms-team-cnt">None selected</span>
+        <span class="ms-dd-clear" onclick="msClear('team')">Clear</span>
+      </div>
+    </div>
+  </div>
+
+  <button class="sel-load-btn" onclick="selApply()">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    Load VINs
+  </button>
+  <span class="sel-reset" id="sel-reset" onclick="selReset()">✕ Show all</span>
+  <span class="sel-count" id="sel-count"></span>
+</div>
+
+<!-- STATS BAR -->
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <div class="stat-pill"><span class="stat-dot"></span>Total <b id="s-total">0</b></div>
+  <div class="stat-pill stat-match"><span class="stat-dot"></span>Match <b id="s-match">0</b></div>
+  <div class="stat-pill stat-mismatch"><span class="stat-dot"></span>Mismatch <b id="s-mismatch">0</b></div>
+  <div class="stat-pill stat-pending"><span class="stat-dot"></span>Pending <b id="s-pending">0</b></div>
+  <div class="stat-pill" style="border-color:rgba(45,212,207,.3);color:var(--teal,#2dd4cf);background:rgba(45,212,207,.08)"><span class="stat-dot"></span>Placeholder <b id="s-placeholder">0</b></div>
+  <div class="stat-pill stat-error"><span class="stat-dot"></span>Error <b id="s-error">0</b></div>
+  <div class="progress-wrap"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  <span class="progress-txt" id="prog-txt"></span>
+</div>
+
+<!-- FILTERS -->
+<div class="filter-bar" style="display:none" id="main-filter-bar">
+  <span class="filter-label">FILTER:</span>
+  <button class="fchip active" data-f="all" onclick="setFilter('all')">All</button>
+  <button class="fchip" data-f="match" onclick="setFilter('match')">✓ Match</button>
+  <button class="fchip" data-f="mismatch" onclick="setFilter('mismatch')">✗ Mismatch</button>
+  <button class="fchip" data-f="pending" onclick="setFilter('pending')">⏳ Pending</button>
+  <button class="fchip" data-f="error" onclick="setFilter('error')">⚠ Error</button>
+  <button class="fchip" data-f="placeholder" onclick="setFilter('placeholder')">🖼 No Photo Yet</button>
+  <button class="fchip" data-f="novdp" onclick="setFilter('novdp')">No VDP</button>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" id="search-inp" placeholder="Search VIN / enterprise…" oninput="renderTable()"/>
+  </div>
+</div>
+
+<div class="page" id="main-page" style="display:none">
+  <div id="init-loading" style="display:none">
+    <div class="load-ring"></div>
+    <div class="load-txt">LOADING VIN DATA…</div>
+  </div>
+  <div id="tbl-wrap" style="display:none">
+    <div class="tbl-shell">
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr>
+            <th style="min-width:160px"># VIN</th>
+            <th style="min-width:140px">Enterprise</th>
+            <th style="min-width:100px">Team</th>
+            <th style="min-width:80px">Make/Model</th>
+            <th style="min-width:90px;text-align:center">Spyne Image</th>
+            <th style="min-width:90px;text-align:center">VDP Image</th>
+            <th style="min-width:110px;text-align:center">Status</th>
+            <th style="min-width:80px;text-align:center">Similarity</th>
+            <th style="min-width:100px">Links</th>
+          </tr></thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lb-overlay" id="lb" onclick="closeLb(event)">
+  <div class="lb-card" onclick="event.stopPropagation()">
+    <button class="lb-close" onclick="closeLb()">✕</button>
+    <div class="lb-title" id="lb-title">Image Comparison</div>
+    <div class="lb-pair">
+      <div class="lb-side">
+        <div class="lb-side-label">🟣 Spyne (thumbnail)</div>
+        <div id="lb-spyne"></div>
+        <div class="lb-url" id="lb-spyne-url"></div>
+      </div>
+      <div class="lb-side">
+        <div class="lb-side-label">🌐 VDP (scraped)</div>
+        <div id="lb-vdp"></div>
+        <div class="lb-url" id="lb-vdp-url"></div>
+      </div>
+    </div>
+    <div class="lb-status" id="lb-status"></div>
+  </div>
+</div>
+
+<canvas id="cv"></canvas>
+
+<script>
+const API = '/api/data';
+const VDP_IMAGE_API = '/api/vdp-image';
+
+let _vins = [], _results = {}, _filter = 'all', _running = false, _stopFlag = false;
+
+const ENT_API = '/api/enterprises';
+
+// ── INIT — page shows instantly, no API calls ────────────────────
+function init() {
+  document.getElementById('sp-sub-txt').textContent = 'Click below to load enterprise list';
+}
+
+// Called when user clicks "Fetch Enterprises" button
+async function fetchEnterprises() {
+  const btn = document.getElementById('sp-fetch-btn');
+  const subEl = document.getElementById('sp-sub-txt');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="sp-fetch-spin"></span> Loading…';
+
+  const t0 = Date.now();
+  const timerInterval = setInterval(() => {
+    const s = ((Date.now() - t0) / 1000).toFixed(0);
+    subEl.textContent = `Fetching enterprise list… ${s}s`;
+  }, 500);
+
+  try {
+    const r = await fetch(ENT_API);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    if (!j.enterprises?.length) throw new Error('No enterprises found');
+
+    clearInterval(timerInterval);
+
+    _spOpts.ent = j.enterprises.map(e => ({
+      name: e.name, eid: e.eid, count: e.count, vdpCount: e.vdpCount, teams: e.teams
+    }));
+    _spTeamsByEnt = {};
+    j.enterprises.forEach(e => { _spTeamsByEnt[e.name] = e.teams; });
+
+    // Hide fetch button, activate enterprise dropdown
+    btn.style.display = 'none';
+    document.getElementById('sp-ent-trig').classList.remove('disabled');
+    document.getElementById('sp-ent-txt').textContent = `${_spOpts.ent.length} enterprises`;
+    subEl.textContent = `${j.totalVins.toLocaleString()} total VINs · select enterprise to filter`;
+    spMsBuild('ent');
+
+  } catch (e) {
+    clearInterval(timerInterval);
+    btn.disabled = false;
+    btn.innerHTML = '↻ Retry';
+    subEl.innerHTML = `<span style="color:var(--red)">Failed: ${e.message}</span>`;
+  }
+}
+
+// Fetch full VIN data — called only after user clicks Load VINs
+async function _fetchVins(entNames, teamNames) {
+  document.getElementById('lp-sub').textContent = 'Fetching VIN data…';
+  const bar = document.getElementById('lp-bar');
+  // Pulse animation while waiting
+  let p = 0;
+  const tick = setInterval(() => { p = Math.min(p + 6, 75); bar.style.width = p + '%'; }, 200);
+
+  try {
+    const r = await fetch(API);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    if (!j.rows?.length) throw new Error('No VINs');
+    if (j.lastSynced) document.getElementById('sync-time').textContent = 'Synced ' + new Date(j.lastSynced).toLocaleTimeString();
+
+    const seen = new Set();
+    let vins = j.rows
+      .map(r => ({
+        vin:         r.vin || r.vinName || '',
+        dealerVinId: r.dealerVinId || '',
+        eid:         r.eid || r.enterpriseId || '',
+        entName:     r.entName || r.enterprise_name || '',
+        teamId:      r.teamId || '',
+        teamName:    r.teamName || r.team_name || '',
+        make:        r.make || '',
+        model:       r.model || '',
+        year:        r.year || '',
+        spyneImg:    r.thumbnail || r.thumbnail_url || '',
+        vdpUrl:      r.vdpUrl || r.vdp_url || '',
+        rb:          r.rb || r.reason_bucket || '',
+      }))
+      .filter(v => { if (!v.vin || seen.has(v.vin)) return false; seen.add(v.vin); return true; });
+
+    // Apply filters
+    if (entNames && entNames.length) vins = vins.filter(v => entNames.includes(v.entName));
+    if (teamNames && teamNames.length) vins = vins.filter(v => teamNames.includes(v.teamName));
+
+    _allVins = vins;
+    clearInterval(tick);
+    return vins;
+  } catch(e) {
+    clearInterval(tick);
+    throw e;
+  }
+}
+
+// ── SELECTION PAGE STATE ──────────────────────────────────────────
+const _spSel  = { ent: new Set(), team: new Set() };
+const _spOpts = { ent: [], team: [] };
+let _spTeamsByEnt = {}; // teamName→count map per enterprise, from /api/enterprises
+
+function spMsToggle(type) {
+  const dd = document.getElementById(`sp-${type}-dd`);
+  const tr = document.getElementById(`sp-${type}-trig`);
+  if (tr.classList.contains('disabled')) return;
+  const isOpen = dd.classList.contains('open');
+  document.querySelectorAll('.sp-ms-dd.open').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.sp-ms-trigger.open').forEach(t => t.classList.remove('open'));
+  if (!isOpen) {
+    dd.classList.add('open'); tr.classList.add('open');
+    setTimeout(() => document.getElementById(`sp-${type}-q`)?.focus(), 40);
+    spMsBuild(type);
+  }
+}
+
+function spMsBuild(type) {
+  const opts = _spOpts[type];
+  const sel  = _spSel[type];
+  const q = (document.getElementById(`sp-${type}-q`)?.value || '').toLowerCase();
+  const list = document.getElementById(`sp-${type}-list`);
+  if (!list) return;
+  const filtered = q ? opts.filter(o => o.name.toLowerCase().includes(q)) : opts;
+  list.innerHTML = filtered.length
+    ? filtered.map(o => `<div class="sp-ms-opt${sel.has(o.name)?' on':''}" onclick="spMsToggleOpt('${type}','${o.name.replace(/\/g,'\\').replace(/'/g,"\'").replace(/"/g,'\"')}')">
+        <div class="sp-ms-box"></div>
+        <span class="sp-ms-opt-name" title="${o.name}">${o.name||'—'}</span>
+        <span class="sp-ms-opt-cnt">${o.count}</span>
+      </div>`).join('')
+    : `<div style="padding:16px;text-align:center;font-size:12px;font-family:var(--f-mono);color:var(--t3)">No results</div>`;
+  const cntEl = document.getElementById(`sp-${type}-cnt`);
+  if (cntEl) cntEl.textContent = sel.size ? `${sel.size} selected` : 'None selected';
+}
+
+function spMsToggleOpt(type, name) {
+  const sel = _spSel[type];
+  sel.has(name) ? sel.delete(name) : sel.add(name);
+  if (type === 'ent') {
+    // Reset teams, rebuild team opts from pre-fetched metadata (no VIN fetch needed)
+    _spSel.team.clear();
+    const teamCounts = {};
+    _spSel.ent.forEach(eName => {
+      (_spTeamsByEnt[eName] || []).forEach(t => {
+        if (!teamCounts[t.name]) teamCounts[t.name] = { count: 0, vdpCount: 0 };
+        teamCounts[t.name].count += t.count;
+        teamCounts[t.name].vdpCount += (t.vdpCount || 0);
+      });
+    });
+    _spOpts.team = Object.entries(teamCounts)
+      .sort((a,b) => b[1].count - a[1].count)
+      .map(([name, t]) => ({ name, count: t.count, vdpCount: t.vdpCount }));
+    const teamTrig = document.getElementById('sp-team-trig');
+    if (_spSel.ent.size > 0) {
+      teamTrig.classList.remove('disabled');
+      document.getElementById('sp-team-txt').textContent = `${_spOpts.team.length} teams`;
+    } else {
+      teamTrig.classList.add('disabled');
+      document.getElementById('sp-team-txt').textContent = 'Select enterprise first';
+    }
+    spMsBuild('team');
+    spUpdateChips('team');
+    spTxtUpdate('team');
+  }
+  spMsBuild(type);
+  spUpdateChips(type);
+  spTxtUpdate(type);
+  spUpdatePreview();
+}
+
+function spMsClear(type) {
+  _spSel[type].clear();
+  if (type === 'ent') {
+    _spSel.team.clear();
+    document.getElementById('sp-team-trig').classList.add('disabled');
+    document.getElementById('sp-team-txt').textContent = 'Select enterprise first';
+    spUpdateChips('team'); spTxtUpdate('team');
+  }
+  spMsBuild(type); spUpdateChips(type); spTxtUpdate(type); spUpdatePreview();
+}
+
+function spTxtUpdate(type) {
+  const sel = _spSel[type];
+  const el  = document.getElementById(`sp-${type}-txt`);
+  const tr  = document.getElementById(`sp-${type}-trig`);
+  if (!el) return;
+  if (sel.size === 0) {
+    el.textContent = type === 'ent' ? `${_spOpts.ent.length} enterprises` : (_spOpts.team.length ? `${_spOpts.team.length} teams` : 'Select enterprise first');
+    el.classList.remove('sel');
+  } else {
+    el.textContent = sel.size === 1 ? [...sel][0] : `${sel.size} ${type === 'ent' ? 'enterprises' : 'teams'} selected`;
+    el.classList.add('sel');
+  }
+}
+
+function spUpdateChips(type) {
+  const sel = _spSel[type];
+  const el  = document.getElementById(`sp-${type}-chips`);
+  if (!el) return;
+  el.innerHTML = [...sel].map(name =>
+    `<div class="sp-chip">${name.length > 28 ? name.slice(0,26)+'…' : name}
+      <span class="sp-chip-x" onclick="spMsToggleOpt('${type}','${name.replace(/\/g,'\\').replace(/'/g,"\'")}')">✕</span>
+    </div>`).join('');
+}
+
+function spUpdatePreview() {
+  const goBtn  = document.getElementById('sp-go-btn');
+  const preview = document.getElementById('sp-vin-preview');
+  goBtn.disabled = _spSel.ent.size === 0;
+  if (_spSel.ent.size === 0) { preview.textContent = ''; return; }
+  // Calculate count from metadata
+  let count = 0;
+  if (_spSel.team.size > 0) {
+    _spSel.ent.forEach(eName => {
+      (_spTeamsByEnt[eName] || []).forEach(t => {
+        if (_spSel.team.has(t.name)) count += t.count;
+      });
+    });
+  } else {
+    _spSel.ent.forEach(eName => {
+      const e = _spOpts.ent.find(x => x.name === eName);
+      if (e) count += e.count;
+    });
+  }
+  preview.textContent = `~${count.toLocaleString()} VINs will load`;
+}
+
+async function spGo() {
+  const entNames  = [..._spSel.ent];
+  const teamNames = [..._spSel.team];
+  const label = entNames.join(', ') + (teamNames.length ? ` · ${teamNames.join(', ')}` : '');
+  await _enterDashboard(entNames, teamNames, label);
+}
+
+async function spGoAll() {
+  await _enterDashboard([], [], 'All VINs');
+}
+
+async function _enterDashboard(entNames, teamNames, label) {
+  // Transition to loading page
+  document.getElementById('sel-page').classList.add('hidden');
+  const lp = document.getElementById('load-page');
+  lp.classList.add('show');
+  document.getElementById('lp-title').textContent = 'Loading VIN data…';
+  document.getElementById('lp-sub').textContent = label;
+  document.getElementById('lp-bar').style.width = '0%';
+
+  try {
+    // Fetch full VIN data now (with filter applied server-side via client filter)
+    const vins = await _fetchVins(entNames.length ? entNames : null, teamNames.length ? teamNames : null);
+
+    document.getElementById('lp-title').textContent = `Loaded ${vins.length.toLocaleString()} VINs`;
+    document.getElementById('lp-bar').style.width = '100%';
+
+    await new Promise(r => setTimeout(r, 350));
+
+    lp.classList.remove('show');
+    // Reveal main dashboard
+    document.getElementById('main-hdr').style.display = '';
+    document.getElementById('stats-bar').style.display = '';
+    document.getElementById('main-filter-bar').style.display = '';
+    document.getElementById('main-page').style.display = '';
+    _loadVins(vins);
+  } catch(e) {
+    document.getElementById('lp-title').textContent = 'Failed to load data';
+    document.getElementById('lp-sub').textContent = e.message;
+    document.getElementById('lp-sub').style.color = 'var(--red)';
+    // Allow going back
+    setTimeout(() => {
+      lp.classList.remove('show');
+      document.getElementById('sel-page').classList.remove('hidden');
+      document.getElementById('sp-sub-txt').textContent = `Error: ${e.message}`;
+      document.getElementById('sp-sub-txt').style.color = 'var(--red)';
+    }, 2500);
+  }
+}
+
+// ── SELECTOR STATE ────────────────────────────────────────────────
+let _allVins = [];
+const _msSel = { ent: new Set(), team: new Set() };
+const _msOpts = { ent: [], team: [] };
+
+function _rebuildTeamOpts(fromVins) {
+  const vins = fromVins || _allVins;
+  const teamCounts = {};
+  vins.forEach(v => { teamCounts[v.teamName] = (teamCounts[v.teamName]||0)+1; });
+  _msOpts.team = Object.entries(teamCounts).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count}));
+}
+
+function _loadVins(vins) {
+  _vins = vins;
+  // Reset results for new set
+  const prev = {};
+  vins.forEach(v => {
+    prev[v.vin] = _results[v.vin] || { status: v.vdpUrl ? 'pending' : 'novdp', vdpImg: '', score: null, method: '' };
+  });
+  _results = prev;
+  document.getElementById('tbl-wrap').style.display = 'block';
+  document.getElementById('sel-count').textContent = `${vins.length.toLocaleString()} VINs`;
+  updateStats(); renderTable();
+}
+
+function selApply() {
+  let vins = _allVins;
+  if (_msSel.ent.size > 0) vins = vins.filter(v => _msSel.ent.has(v.entName));
+  // Rebuild team opts based on selected enterprises
+  _rebuildTeamOpts(vins);
+  msBuild('team');
+  if (_msSel.team.size > 0) vins = vins.filter(v => _msSel.team.has(v.teamName));
+  const rst = document.getElementById('sel-reset');
+  if (rst) rst.style.display = (_msSel.ent.size > 0 || _msSel.team.size > 0) ? 'inline' : 'none';
+  _loadVins(vins);
+  // Close any open dropdowns
+  document.querySelectorAll('.ms-dd.open').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.ms-trigger.open').forEach(d => d.classList.remove('open'));
+}
+
+function selReset() {
+  _msSel.ent.clear(); _msSel.team.clear();
+  _rebuildTeamOpts();
+  msBuild('ent'); msBuild('team');
+  msTxtUpdate('ent'); msTxtUpdate('team');
+  document.getElementById('sel-reset').style.display = 'none';
+  _loadVins(_allVins);
+}
+
+// ── MULTI-SELECT HELPERS ──────────────────────────────────────────
+function msToggle(type) {
+  const dd = document.getElementById(`ms-${type}-dd`);
+  const tr = document.getElementById(`ms-${type}-trig`);
+  const isOpen = dd.classList.contains('open');
+  document.querySelectorAll('.ms-dd.open').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.ms-trigger.open').forEach(d => d.classList.remove('open'));
+  if (!isOpen) {
+    // Rebuild team opts when opening team dropdown
+    if (type === 'team') {
+      const entFiltered = _msSel.ent.size > 0 ? _allVins.filter(v => _msSel.ent.has(v.entName)) : _allVins;
+      _rebuildTeamOpts(entFiltered);
+    }
+    dd.classList.add('open'); tr.classList.add('open');
+    setTimeout(() => document.getElementById(`ms-${type}-q`)?.focus(), 40);
+    msBuild(type);
+  }
+}
+
+function msBuild(type) {
+  const opts = _msOpts[type];
+  const sel = _msSel[type];
+  const q = (document.getElementById(`ms-${type}-q`)?.value || '').toLowerCase();
+  const list = document.getElementById(`ms-${type}-list`);
+  if (!list) return;
+  const filtered = q ? opts.filter(o => o.name.toLowerCase().includes(q)) : opts;
+  list.innerHTML = filtered.length
+    ? filtered.map(o => `<div class="ms-opt${sel.has(o.name)?' on':''}" onclick="msToggleOpt('${type}','${o.name.replace(/\/g,'\\').replace(/'/g,"\'")}')">
+        <div class="ms-box"></div>
+        <span class="ms-opt-lbl" title="${o.name}">${o.name||'—'}</span>
+        <span class="ms-opt-cnt">${o.count}</span>
+      </div>`).join('')
+    : `<div style="padding:16px;text-align:center;font-size:11px;font-family:var(--f-mono);color:var(--t3)">No results</div>`;
+  const cntEl = document.getElementById(`ms-${type}-cnt`);
+  if (cntEl) cntEl.textContent = sel.size ? `${sel.size} selected` : 'None selected';
+}
+
+function msToggleOpt(type, name) {
+  const sel = _msSel[type];
+  sel.has(name) ? sel.delete(name) : sel.add(name);
+  if (type === 'ent') { _msSel.team.clear(); msTxtUpdate('team'); }
+  msBuild(type); msTxtUpdate(type);
+}
+
+function msClear(type) {
+  _msSel[type].clear();
+  if (type === 'ent') { _msSel.team.clear(); msTxtUpdate('team'); }
+  msBuild(type); msTxtUpdate(type);
+}
+
+function msTxtUpdate(type) {
+  const sel = _msSel[type];
+  const el = document.getElementById(`ms-${type}-txt`);
+  const tr = document.getElementById(`ms-${type}-trig`);
+  if (!el) return;
+  if (sel.size === 0) {
+    el.textContent = type === 'ent' ? 'All Enterprises' : 'All Teams';
+    el.classList.remove('sel'); tr.style.borderColor = '';
+  } else if (sel.size === 1) {
+    el.textContent = [...sel][0]; el.classList.add('sel'); tr.style.borderColor = 'var(--accent)';
+  } else {
+    el.textContent = `${sel.size} ${type === 'ent' ? 'enterprises' : 'teams'} selected`;
+    el.classList.add('sel'); tr.style.borderColor = 'var(--accent)';
+  }
+  const cntEl = document.getElementById(`ms-${type}-cnt`);
+  if (cntEl) cntEl.textContent = sel.size ? `${sel.size} selected` : 'None selected';
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.ms-wrap')) {
+    document.querySelectorAll('.ms-dd.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.ms-trigger.open').forEach(d => d.classList.remove('open'));
+  }
+  if (!e.target.closest('.sp-ms-wrap')) {
+    document.querySelectorAll('.sp-ms-dd.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.sp-ms-trigger.open').forEach(d => d.classList.remove('open'));
+  }
+});
+
+// ── FETCH VDP IMAGE (server-side via /api/vdp-image) ─────────────
+async function fetchVdpImage(url) {
+  try {
+    const res = await fetch(`${VDP_IMAGE_API}?url=${encodeURIComponent(url)}`, {
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return { image: null, error: `HTTP ${res.status}` };
+    const j = await res.json();
+    return j; // { image, source, placeholder, error }
+  } catch (e) {
+    return { image: null, error: e.message };
+  }
+}
+
+// ── PIXEL SIMILARITY ─────────────────────────────────────────────
+async function pixelSimilarity(urlA, urlB) {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const SIZE = 32; // downsample to 32x32 for speed
+  cv.width = SIZE; cv.height = SIZE;
+
+  async function loadImg(src) {
+    return new Promise((res, rej) => {
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        ctx.clearRect(0, 0, SIZE, SIZE);
+        ctx.drawImage(img, 0, 0, SIZE, SIZE);
+        res(ctx.getImageData(0, 0, SIZE, SIZE).data);
+      };
+      img.onerror = () => rej(new Error('load fail'));
+      img.src = src;
+      setTimeout(() => rej(new Error('timeout')), 8000);
+    });
+  }
+
+  try {
+    const [dA, dB] = await Promise.all([loadImg(urlA), loadImg(urlB)]);
+    let diff = 0;
+    for (let i = 0; i < dA.length; i += 4) {
+      diff += Math.abs(dA[i] - dB[i]) + Math.abs(dA[i+1] - dB[i+1]) + Math.abs(dA[i+2] - dB[i+2]);
+    }
+    const maxDiff = SIZE * SIZE * 3 * 255;
+    return Math.round((1 - diff / maxDiff) * 100);
+  } catch { return null; }
+}
+
+// ── RUN CHECK ────────────────────────────────────────────────────
+// Per-domain last-request timestamp — enforces min gap between hits on same domain
+const _domainLastHit = {};
+const DOMAIN_GAP_MS = 1500;    // min 1.5s between requests to the same domain
+const GLOBAL_GAP_MS = 300;     // min 0.3s between any two requests
+const MAX_RETRIES   = 2;       // retry 429s up to 2 times
+const RETRY_DELAY_MS = 4000;   // wait 4s before retrying a 429
+
+function getDomain(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+async function waitForDomain(domain) {
+  const last = _domainLastHit[domain] || 0;
+  const wait = Math.max(0, last + DOMAIN_GAP_MS - Date.now());
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _domainLastHit[domain] = Date.now();
+}
+
+async function fetchVdpImageWithRetry(url) {
+  const domain = getDomain(url);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff: 4s, 8s
+      const backoff = RETRY_DELAY_MS * attempt;
+      await new Promise(r => setTimeout(r, backoff));
+    }
+    await waitForDomain(domain);
+    const result = await fetchVdpImage(url);
+    // If 429, retry; otherwise return
+    if (result?.httpStatus === 429 && attempt < MAX_RETRIES) continue;
+    return result;
+  }
+}
+
+async function processVdpResult(v, vdpResult) {
+  const vdpImg = vdpResult?.image || null;
+  if (!vdpImg) {
+    _results[v.vin] = { status: 'error', vdpImg: '', score: null, method: vdpResult?.error || 'no_image_found', placeholder: false };
+    return;
+  }
+  _results[v.vin].vdpImg = vdpImg;
+  _results[v.vin].vdpSource = vdpResult.source || '';
+
+  if (vdpResult.placeholder) {
+    _results[v.vin].status = 'placeholder';
+    _results[v.vin].score = null;
+    _results[v.vin].method = 'placeholder';
+    return;
+  }
+
+  const spyne = v.spyneImg;
+  if (!spyne) { _results[v.vin].status = 'error'; _results[v.vin].method = 'no_spyne_img'; return; }
+
+  // Step 1: URL match (strip query params)
+  const norm = u => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
+  if (norm(spyne) === norm(vdpImg)) {
+    _results[v.vin].status = 'match';
+    _results[v.vin].score = 100;
+    _results[v.vin].method = 'url';
+  } else {
+    // Step 2: pixel similarity
+    const score = await pixelSimilarity(spyne, vdpImg);
+    _results[v.vin].score = score;
+    _results[v.vin].method = 'pixel';
+    _results[v.vin].status = score === null ? 'error' : score >= 85 ? 'match' : 'mismatch';
+  }
+}
+
+async function startCheck() {
+  if (_running) return;
+  _running = true; _stopFlag = false;
+  document.getElementById('run-btn').style.display = 'none';
+  document.getElementById('stop-btn').style.display = 'inline-flex';
+
+  const toCheck = _vins.filter(v => v.vdpUrl);
+  let done = 0;
+
+  for (const v of toCheck) {
+    if (_stopFlag) break;
+    _results[v.vin].status = 'checking';
+    renderRow(v.vin);
+    updateStats();
+
+    try {
+      const vdpResult = await fetchVdpImageWithRetry(v.vdpUrl);
+      await processVdpResult(v, vdpResult);
+    } catch (e) {
+      _results[v.vin].status = 'error';
+      _results[v.vin].method = e.message;
+    }
+
+    done++;
+    document.getElementById('prog-fill').style.width = Math.round(done / toCheck.length * 100) + '%';
+    document.getElementById('prog-txt').textContent = `${done}/${toCheck.length}`;
+    renderRow(v.vin);
+    updateStats();
+    await new Promise(r => setTimeout(r, GLOBAL_GAP_MS));
+    // Show domain cooldown hint if next VIN hits the same domain soon
+    if (!_stopFlag && done < toCheck.length) {
+      const nextDomain = getDomain(toCheck[done].vdpUrl);
+      const gap = Math.max(0, (_domainLastHit[nextDomain]||0) + DOMAIN_GAP_MS - Date.now());
+      if (gap > 500) document.getElementById('prog-txt').textContent = `${done}/${toCheck.length} · ⏳ cooling ${nextDomain}`;
+    }
+  }
+
+  _running = false;
+  document.getElementById('run-btn').style.display = 'inline-flex';
+  document.getElementById('stop-btn').style.display = 'none';
+}
+
+function stopChecking() {
+  _stopFlag = true;
+}
+
+// ── STATS ─────────────────────────────────────────────────────────
+function updateStats() {
+  const counts = { match: 0, mismatch: 0, pending: 0, error: 0, novdp: 0, placeholder: 0 };
+  Object.values(_results).forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  document.getElementById('s-total').textContent = _vins.length;
+  document.getElementById('s-match').textContent = counts.match;
+  document.getElementById('s-mismatch').textContent = counts.mismatch;
+  document.getElementById('s-pending').textContent = counts.pending;
+  document.getElementById('s-placeholder').textContent = counts.placeholder;
+  document.getElementById('s-error').textContent = counts.error;
+}
+
+// ── FILTER ───────────────────────────────────────────────────────
+function setFilter(f) {
+  _filter = f;
+  document.querySelectorAll('.fchip').forEach(c => c.classList.toggle('active', c.dataset.f === f));
+  renderTable();
+}
+
+// ── RENDER TABLE ─────────────────────────────────────────────────
+function renderTable() {
+  const q = document.getElementById('search-inp').value.toLowerCase();
+  const filtered = _vins.filter(v => {
+    const r = _results[v.vin] || {};
+    if (_filter !== 'all' && r.status !== _filter) return false;
+    if (q && !v.vin.toLowerCase().includes(q) && !v.entName.toLowerCase().includes(q) && !v.teamName.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const tbody = document.getElementById('tbl-body');
+  if (!filtered.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">No VINs match the current filter</td></tr>`; return; }
+  tbody.innerHTML = filtered.map((v, i) => rowHTML(v, i)).join('');
+}
+
+function renderRow(vin) {
+  const v = _vins.find(x => x.vin === vin); if (!v) return;
+  const row = document.querySelector(`tr[data-vin="${CSS.escape(vin)}"]`);
+  if (!row) return;
+  const i = _vins.indexOf(v);
+  row.outerHTML = rowHTML(v, i);
+}
+
+function rowHTML(v, i) {
+  const r = _results[v.vin] || { status: 'novdp', vdpImg: '', score: null };
+  const spyneThumb = v.spyneImg;
+  const vdpThumb = r.vdpImg;
+  const consoleUrl = (v.dealerVinId && v.eid && v.teamId)
+    ? `https://console.spyne.ai/inventory/v2/listings/${v.dealerVinId}?enterprise_id=${v.eid}&team_id=${v.teamId}` : '';
+
+  // Status badge
+  const badges = {
+    match:       `<span class="status-badge s-match"><span class="s-dot"></span>Match</span>`,
+    mismatch:    `<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>`,
+    pending:     `<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>`,
+    checking:    `<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>`,
+    novdp:       `<span class="status-badge s-novdp">No VDP URL</span>`,
+    error:       `<span class="status-badge s-error">⚠ Error</span>`,
+    placeholder: `<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo Yet</span>`,
+  };
+
+  // Similarity bar
+  let simHtml = '—';
+  if (r.score !== null) {
+    const col = r.score >= 85 ? 'var(--green)' : r.score >= 60 ? 'var(--amber)' : 'var(--red)';
+    simHtml = `<div class="score-bar">
+      <div class="score-track"><div class="score-fill" style="width:${r.score}%;background:${col}"></div></div>
+      <span style="font-family:var(--f-mono);font-size:10px;color:${col}">${r.score}%</span>
+      <span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">${r.method==='url'?'url':'px'}</span>
+    </div>`;
+  }
+
+  // Image cells — clicking opens lightbox
+  const lbClick = `onclick="openLb('${v.vin.replace(/'/g,"\\'")}')";style="cursor:pointer"`;
+  const spyneCell = spyneThumb
+    ? `<div class="img-cell"><img class="img-thumb" src="${spyneThumb}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=img-missing>📷</div>'" ${lbClick}></div>`
+    : `<div class="img-cell"><div class="img-missing" ${lbClick}>📷</div></div>`;
+  const vdpCell = vdpThumb
+    ? `<div class="img-cell"><img class="img-thumb" src="${vdpThumb}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=img-missing>🌐</div>'" ${lbClick}></div>`
+    : `<div class="img-cell"><div class="img-missing" ${lbClick} style="font-size:12px;color:var(--t3);">${r.status==='pending'||r.status==='checking'?'⏳':'—'}</div></div>`;
+
+  return `<tr data-vin="${v.vin}">
+    <td>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:9px;font-family:var(--f-mono);color:var(--t3)">${i+1}</span>
+        <span style="font-family:var(--f-mono);font-size:10px;color:var(--t1)">${v.vin||'—'}</span>
+      </div>
+    </td>
+    <td style="font-size:11px">${v.entName||'—'}</td>
+    <td style="font-size:10px;color:var(--t3)">${v.teamName||'—'}</td>
+    <td style="font-size:10px">${[v.year,v.make,v.model].filter(Boolean).join(' ')||'—'}</td>
+    <td style="text-align:center">${spyneCell}</td>
+    <td style="text-align:center">${vdpCell}</td>
+    <td style="text-align:center">${badges[r.status]||badges.pending}</td>
+    <td>${simHtml}</td>
+    <td>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        ${v.vdpUrl ? `<a class="link-pill" href="${v.vdpUrl}" target="_blank" title="Open VDP">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>VDP</a>` : ''}
+        ${consoleUrl ? `<a class="link-pill" href="${consoleUrl}" target="_blank" title="Spyne Console">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Console</a>` : ''}
+      </div>
+    </td>
+  </tr>`;
+}
+
+// ── LIGHTBOX ─────────────────────────────────────────────────────
+function openLb(vin) {
+  const v = _vins.find(x => x.vin === vin); if (!v) return;
+  const r = _results[vin] || {};
+  document.getElementById('lb-title').textContent = `${vin} — ${v.entName}`;
+
+  const spyne = v.spyneImg;
+  document.getElementById('lb-spyne').innerHTML = spyne
+    ? `<img class="lb-img" src="${spyne}" onerror="this.outerHTML='<div class=lb-img-missing>📷</div>'">`
+    : `<div class="lb-img-missing">📷</div>`;
+  document.getElementById('lb-spyne-url').textContent = spyne || '—';
+
+  const vdp = r.vdpImg;
+  document.getElementById('lb-vdp').innerHTML = vdp
+    ? `<img class="lb-img" src="${vdp}" onerror="this.outerHTML='<div class=lb-img-missing>🌐</div>'">`
+    : `<div class="lb-img-missing">${r.status === 'pending' ? '⏳ Not yet checked' : r.status === 'error' ? '⚠ Failed to fetch' : '—'}</div>`;
+  document.getElementById('lb-vdp-url').textContent = vdp || '—';
+
+  const badges = {
+    match:       `<span class="status-badge s-match" style="font-size:13px;padding:6px 16px"><span class="s-dot"></span>✓ Images Match (${r.score ?? ''}% · ${r.method === 'url' ? 'URL identical' : 'pixel similarity'})</span>`,
+    mismatch:    `<span class="status-badge s-mismatch" style="font-size:13px;padding:6px 16px"><span class="s-dot"></span>✗ Images Differ (${r.score ?? ''}% similarity)</span>`,
+    pending:     `<span class="status-badge s-pending" style="font-size:13px;padding:6px 16px">⏳ Not yet checked — click Run Check</span>`,
+    checking:    `<span class="status-badge s-checking" style="font-size:13px;padding:6px 16px">Checking…</span>`,
+    novdp:       `<span class="status-badge s-novdp" style="font-size:13px;padding:6px 16px">No VDP URL available</span>`,
+    error:       `<span class="status-badge s-error" style="font-size:13px;padding:6px 16px">⚠ Could not fetch VDP image — ${r.method||''}</span>`,
+    placeholder: `<span class="status-badge" style="font-size:13px;padding:6px 16px;background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;border-radius:100px;font-family:var(--f-mono)">🖼 VDP shows "Images Coming Soon" — no real photo published yet</span>`,
+  };
+  document.getElementById('lb-status').innerHTML = badges[r.status] || '';
+  document.getElementById('lb').classList.add('open');
+}
+function closeLb(e) {
+  if (e && e.target !== document.getElementById('lb')) return;
+  document.getElementById('lb').classList.remove('open');
+}
+
+// ── THEME ─────────────────────────────────────────────────────────
+function toggleTheme() {
+  const n = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  const t = n === 'dark' ? '🌙' : '☀️';
+  const b1=document.getElementById('tbtn'); if(b1) b1.textContent=t;
+  const b2=document.getElementById('sp-tbtn'); if(b2) b2.textContent=t;
+  localStorage.setItem('img-checker-theme', n);
+}
+(() => {
+  const s = localStorage.getItem('img-checker-theme');
+  if (s) {
+    document.documentElement.setAttribute('data-theme', s);
+    const t = s === 'dark' ? '🌙' : '☀️';
+    const b1=document.getElementById('tbtn'); if(b1) b1.textContent=t;
+    const b2=document.getElementById('sp-tbtn'); if(b2) b2.textContent=t;
+  }
+})();
+
+init();
+</script>
+</body>
+</html>
