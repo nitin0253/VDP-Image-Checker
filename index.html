@@ -231,6 +231,7 @@ canvas{display:none}
   <div class="hdr-right">
     <span id="sync-time" style="font-size:11px;font-family:var(--f-mono);color:var(--t3)"></span>
     <button class="icon-btn" onclick="toggleTheme()" id="tbtn">🌙</button>
+    <button class="btn btn-ghost" onclick="goHome()" id="home-btn" style="display:none">← Home</button>
     <button class="btn btn-ghost" onclick="stopChecking()" id="stop-btn" style="display:none">⏹ Stop</button>
     <button class="btn btn-primary" onclick="startCheck()" id="run-btn">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -308,6 +309,20 @@ const ENT_CSV = 'https://metabase.spyne.ai/public/question/7d25d6cf-85c5-43e4-80
 let _vins=[], _results={}, _filter='all', _running=false, _stopFlag=false, _allVins=[];
 const _spSel={ent:new Set(),team:new Set()}, _spOpts={ent:[],team:[]};
 let _spTeamsByEnt={};
+
+function goHome(){
+  // Reset state
+  _vins=[]; _results={}; _filter='all'; _running=false; _stopFlag=false; _allVins=[];
+  _spSel.ent.clear(); _spSel.team.clear();
+  // Hide dashboard, show selection page
+  ['main-hdr','stats-bar','main-filter-bar','main-page'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('home-btn').style.display='none';
+  document.getElementById('tbl-wrap').style.display='none';
+  // Reset fetch button
+  const btn=document.getElementById('sp-fetch-btn');
+  btn.style.display='inline-flex'; btn.disabled=false; btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Fetch Enterprise List';
+  document.getElementById('sel-page').classList.remove('hidden');
+}
 
 function init(){
   document.getElementById('sp-sub-txt').textContent='Click Fetch Enterprise List to begin';
@@ -468,6 +483,7 @@ async function _enterDashboard(en,tn,label){
     await new Promise(r=>setTimeout(r,350));
     lp.classList.remove('show');
     ['main-hdr','stats-bar','main-filter-bar','main-page'].forEach(id=>document.getElementById(id).style.display='');
+    document.getElementById('home-btn').style.display='inline-flex';
     _loadVins(vins);
   }catch(e){
     document.getElementById('lp-title').textContent='Failed to load data';
