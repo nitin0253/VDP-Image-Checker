@@ -5,7 +5,7 @@
 
 let vinCache = null, entCache = null, lastFetch = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 min — longer TTL means fewer cold fetches
-const VIN_URL = "https://metabase.spyne.ai/public/question/2f5d51f1-8069-4d3d-a8e1-24376d88c930.csv";
+const VIN_URL = "https://metabase.spyne.ai/public/question/2b76ef6d-65a5-4b33-8de8-e7ec1d6cdb4e.csv";
 const ENT_URL = "https://metabase.spyne.ai/public/question/b8f1271c-cc5a-470f-badf-807711f74af4.csv";
 
 function splitRow(row) {
