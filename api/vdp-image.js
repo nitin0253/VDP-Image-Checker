@@ -74,7 +74,7 @@ export default async function handler(req, res) {
   for (let si = 0; si < strategies.length; si++) {
     try {
       // Small gap between strategies to avoid hammering
-      if (si > 0) await sleep(800);
+      if (si > 0) await sleep(300);
       const response = await strategies[si]();
       lastStatus = response.status;
       if (response.ok) {
