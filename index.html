@@ -318,17 +318,43 @@ const _spSel={ent:new Set(),team:new Set()}, _spOpts={ent:[],team:[]};
 let _spTeamsByEnt={};
 
 function goHome(){
-  // Reset state
-  _vins=[]; _results={}; _filter='all'; _running=false; _stopFlag=false; _allVins=[];
+  // Stop any running check immediately
+  if(_running){ _stopFlag=true; _running=false; }
+
+  // Reset all state
+  _vins=[]; _results={}; _filter='all'; _stopFlag=false; _allVins=[];
   _spSel.ent.clear(); _spSel.team.clear();
-  // Hide dashboard, show selection page
+
+  // Reset run/stop buttons
+  const runBtn=document.getElementById('run-btn');
+  const stopBtn=document.getElementById('stop-btn');
+  if(runBtn) runBtn.style.display='inline-flex';
+  if(stopBtn) stopBtn.style.display='none';
+
+  // Reset progress bar
+  const pf=document.getElementById('prog-fill');if(pf)pf.style.width='0%';
+  const pt=document.getElementById('prog-txt');if(pt)pt.textContent='';
+
+  // Hide dashboard
   ['main-hdr','stats-bar','main-filter-bar','main-page'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('home-btn').style.display='none';
   document.getElementById('download-btn').style.display='none';
   document.getElementById('tbl-wrap').style.display='none';
-  // Reset fetch button
+
+  // Reset selection page state
+  const entX=document.getElementById('sp-ent-x');if(entX)entX.style.display='none';
+  const teamX=document.getElementById('sp-team-x');if(teamX)teamX.style.display='none';
+  const entQ=document.getElementById('sp-ent-q');if(entQ)entQ.value='';
+  const teamQ=document.getElementById('sp-team-q');if(teamQ)teamQ.value='';
+  spUpdateChips('ent'); spUpdateChips('team');
+  spTxtUpdate('ent'); spTxtUpdate('team');
+  spUpdatePreview();
+
+  // Reset Load Enterprise button
   const btn=document.getElementById('sp-fetch-btn');
-  btn.style.display='inline-flex'; btn.disabled=false; btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Fetch Enterprise List';
+  btn.style.display='inline-flex'; btn.disabled=false; btn.style.background='';
+  btn.textContent='Load Enterprise List';
+  document.getElementById('sp-sub-txt').textContent='Select enterprise / team to filter data';
   document.getElementById('sel-page').classList.remove('hidden');
 }
 
@@ -442,7 +468,14 @@ function spMsToggleOpt(type,name){
 
 function spMsClear(type){
   _spSel[type].clear();
-  if(type==='ent'){_spSel.team.clear();spUpdateChips('team');spTxtUpdate('team');const tx=document.getElementById('sp-team-x');if(tx)tx.style.display='none';}
+  // Clear search input
+  const qEl=document.getElementById('sp-'+type+'-q');if(qEl)qEl.value='';
+  if(type==='ent'){
+    _spSel.team.clear();
+    const tq=document.getElementById('sp-team-q');if(tq)tq.value='';
+    spUpdateChips('team');spTxtUpdate('team');
+    const tx=document.getElementById('sp-team-x');if(tx)tx.style.display='none';
+  }
   spMsBuild(type);spUpdateChips(type);spTxtUpdate(type);spUpdatePreview();
   const xBtn=document.getElementById('sp-'+type+'-x');if(xBtn)xBtn.style.display='none';
 }
