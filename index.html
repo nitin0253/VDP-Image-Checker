@@ -517,10 +517,16 @@ async function _enterDashboard(en,tn,label){
   document.getElementById('sel-page').classList.add('hidden');
   const lp=document.getElementById('load-page');lp.classList.add('show');
   document.getElementById('lp-title').textContent='Loading VIN data…';
+  const _t0=Date.now();
+  const _loadTimer=setInterval(()=>{
+    const s=Math.floor((Date.now()-_t0)/1000);
+    document.getElementById('lp-title').textContent='Loading VIN data… '+s+'s';
+  },1000);
   document.getElementById('lp-sub').textContent=label;
   document.getElementById('lp-bar').style.width='0%';
   try{
     const vins=await _fetchVins(en.length?en:null,tn.length?tn:null);
+    clearInterval(_loadTimer);
     document.getElementById('lp-title').textContent='Loaded '+vins.length.toLocaleString()+' VINs';
     document.getElementById('lp-bar').style.width='100%';
     await new Promise(r=>setTimeout(r,350));
@@ -530,11 +536,26 @@ async function _enterDashboard(en,tn,label){
     document.getElementById('download-btn').style.display='inline-flex';
     _loadVins(vins);
   }catch(e){
+    clearInterval(_loadTimer);
+    // Show error with a manual "Go Back" button — never auto-redirect
+    // Auto-redirect was causing silent failures that confused users
+    const errMsg = e.message||'Unknown error';
     document.getElementById('lp-title').textContent='Failed to load data';
-    document.getElementById('lp-sub').textContent=e.message;
-    document.getElementById('lp-sub').style.color='var(--red)';
-    setTimeout(()=>{lp.classList.remove('show');document.getElementById('sel-page').classList.remove('hidden');},2500);
+    document.getElementById('lp-bar').style.width='0%';
+    document.getElementById('lp-sub').innerHTML =
+      '<span style="color:var(--red);font-family:var(--f-mono);font-size:11px">'+errMsg+'</span>'+
+      '<br><br>'+
+      '<button onclick="goHome()" style="margin-top:8px;padding:8px 20px;border-radius:8px;background:var(--card);border:1px solid var(--rim);color:var(--t2);font-size:12px;cursor:pointer">← Go Back</button>'+
+      '<button onclick="_retryLoad()" style="margin-top:8px;margin-left:8px;padding:8px 20px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;cursor:pointer">↻ Retry</button>';
+    // Store retry params
+    window._lastEn=en; window._lastTn=tn; window._lastLabel=label;
+    console.error('_enterDashboard failed:', errMsg);
   }
+}
+
+function _retryLoad(){
+  const en=window._lastEn||[], tn=window._lastTn||[], label=window._lastLabel||'';
+  _enterDashboard(en,tn,label);
 }
 
 async function _fetchVins(en,tn){
@@ -543,7 +564,7 @@ async function _fetchVins(en,tn){
   const tick=setInterval(()=>{p=Math.min(p+6,75);bar.style.width=p+'%';},200);
   try{
     const r=await fetch(API);if(!r.ok)throw new Error('HTTP '+r.status);
-    const j=await r.json();if(!j.rows||!j.rows.length)throw new Error('No VINs');
+    const j=await r.json();if(!j.rows||!j.rows.length)throw new Error('API returned 0 VINs — the Metabase query may have returned no results or the cache is empty');
     if(j.lastSynced)document.getElementById('sync-time').textContent='Synced '+new Date(j.lastSynced).toLocaleTimeString();
     const seen=new Set();
     let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{
