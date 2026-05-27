@@ -588,23 +588,54 @@ async function fetchVdpImageWithRetry(url){
 
 async function processVdpResult(v,res){
   const img=res&&res.image;
-  if(!img){_results[v.vin]={status:'error',vdpImg:'',score:null,method:(res&&res.error)||'no_image_found',placeholder:false};return;}
-  _results[v.vin].vdpImg=img;_results[v.vin].vdpSource=(res&&res.source)||'';
-  if(res&&res.placeholder){_results[v.vin].status='placeholder';_results[v.vin].score=null;_results[v.vin].method='placeholder';return;}
-  const sp=v.spyneImgDirect||v.spyneImg;if(!sp){_results[v.vin].status='error';_results[v.vin].method='no_spyne';return;}
+  if(!img){
+    _results[v.vin]={status:'error',vdpImg:'',score:null,method:(res&&res.error)||'no_image_found',placeholder:false};
+    return;
+  }
+  _results[v.vin].vdpImg=img;
+  _results[v.vin].vdpSource=(res&&res.source)||'';
+
+  // Server flagged as brand logo / placeholder — VIN not live on site
+  if(res&&res.placeholder){
+    _results[v.vin].status='placeholder';
+    _results[v.vin].score=null;
+    _results[v.vin].method='brand_logo_or_placeholder';
+    return;
+  }
+
+  const sp=v.spyneImgDirect||v.spyneImg;
+  if(!sp){_results[v.vin].status='error';_results[v.vin].method='no_spyne_img';return;}
+
   const norm=u=>{try{const x=new URL(u);return x.origin+x.pathname;}catch{return u;}};
   if(norm(sp)===norm(img)){
-    _results[v.vin].status='match'; _results[v.vin].score=100; _results[v.vin].method='url';
+    _results[v.vin].status='match';_results[v.vin].score=100;_results[v.vin].method='url_match';
+    return;
+  }
+
+  // Run pixel comparison
+  const px=await pixelSimilarity(sp,img);
+  if(px.score===null){
+    _results[v.vin].status='error';
+    _results[v.vin].method='pixel_fail:'+(px.error||'unknown');
+    return;
+  }
+
+  _results[v.vin].score=px.score;
+  _results[v.vin].method='pixel';
+
+  // Higher threshold for mismatch: 85% match, but also guard against
+  // brand-logo false positives — if score is between 50-84, it's a real mismatch.
+  // If score is suspiciously high (>=85) but images look very different,
+  // it could be two plain/white backgrounds. Keep the 85% threshold.
+  if(px.score>=85){
+    _results[v.vin].status='match';
+  } else if(px.score>=50){
+    _results[v.vin].status='mismatch';
   } else {
-    const px=await pixelSimilarity(sp,img);
-    if(px.score===null){
-      _results[v.vin].status='error';
-      _results[v.vin].method='pixel_fail:'+( px.error||'unknown');
-    } else {
-      _results[v.vin].score=px.score;
-      _results[v.vin].method='pixel';
-      _results[v.vin].status=px.score>=85?'match':'mismatch';
-    }
+    // Very low similarity — likely a brand logo or completely wrong image
+    // Mark as placeholder instead of mismatch
+    _results[v.vin].status='placeholder';
+    _results[v.vin].method='low_similarity_'+px.score+'pct_likely_placeholder';
   }
 }
 
@@ -671,7 +702,7 @@ function renderRow(vin){
 function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
   const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
-  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'" style="cursor:help;max-width:200px;overflow:hidden;text-overflow:ellipsis">⚠ '+(r.method?r.method.slice(0,28):'Error')+'</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo</span>'};
+  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'" style="cursor:help;max-width:200px;overflow:hidden;text-overflow:ellipsis">⚠ '+(r.method?r.method.slice(0,28):'Error')+'</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600" title="'+(r.method||'')+'">🖼 '+(r.method&&r.method.includes('low_sim')?'Wrong Image':(r.method&&r.method.includes('logo')?'Not Live':'No Photo'))+'</span>'};
   let sh='—';
   if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
   const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
