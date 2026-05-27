@@ -514,7 +514,7 @@ async function _fetchVins(en,tn){
     const j=await r.json();if(!j.rows||!j.rows.length)throw new Error('No VINs');
     if(j.lastSynced)document.getElementById('sync-time').textContent='Synced '+new Date(j.lastSynced).toLocaleTimeString();
     const seen=new Set();
-    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{const t=r.thumbnail||r.thumbnail_url||'';const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);return m?m[0]:t;})(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
+    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:r.thumbnail||r.thumbnail_url||'',spyneImgDirect:(()=>{const t=r.thumbnail||r.thumbnail_url||'';const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);return m?m[0]:'';})(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
     if(en&&en.length)vins=vins.filter(v=>en.includes(v.entName));
     if(tn&&tn.length)vins=vins.filter(v=>tn.includes(v.teamName));
     _allVins=vins;clearInterval(tick);return vins;
@@ -538,11 +538,44 @@ async function fetchVdpImage(url){
   catch(e){return{image:null,error:e.message};}
 }
 
-async function pixelSimilarity(a,b){
-  const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),S=32;cv.width=S;cv.height=S;
-  async function li(src){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);};img.onerror=()=>rej(new Error('fail'));img.src=src;setTimeout(()=>rej(new Error('timeout')),8000);});}
-  try{const[dA,dB]=await Promise.all([li(a),li(b)]);let d=0;for(let i=0;i<dA.length;i+=4)d+=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);return Math.round((1-d/(S*S*3*255))*100);}
-  catch{return null;}
+async function pixelSimilarity(a, b){
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
+  cv.width=S; cv.height=S;
+  async function li(src, useCors){
+    return new Promise((res,rej)=>{
+      const img=new Image();
+      if(useCors) img.crossOrigin='anonymous';
+      img.onload=()=>{
+        try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
+        catch(e){rej(new Error('taint:'+e.message));}
+      };
+      img.onerror=()=>rej(new Error('load_fail'));
+      img.src=src;
+      setTimeout(()=>rej(new Error('timeout')),10000);
+    });
+  }
+  // Try with CORS first, fallback to no-cors (tainted canvas — can't read pixels but at least loads)
+  async function loadImg(src){
+    try{ return await li(src, true); }
+    catch(e){
+      if(e.message.startsWith('taint') || e.message.includes('load_fail')){
+        // Try proxy version if it's a direct S3 URL
+        if(src.includes('spyne-media.s3')){
+          const proxy='https://media.spyneai.com/unsafe/128x92/'+src;
+          try{ return await li(proxy, true); } catch{}
+        }
+      }
+      throw e;
+    }
+  }
+  try{
+    const[dA,dB]=await Promise.all([loadImg(a),loadImg(b)]);
+    let d=0;
+    for(let i=0;i<dA.length;i+=4) d+=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+    return{score:Math.round((1-d/(S*S*3*255))*100), method:'pixel'};
+  }catch(e){
+    return{score:null, error:e.message};
+  }
 }
 
 const _dlh={};const DG=1500,GG=300,MR=2,RD=4000;
@@ -558,10 +591,21 @@ async function processVdpResult(v,res){
   if(!img){_results[v.vin]={status:'error',vdpImg:'',score:null,method:(res&&res.error)||'no_image_found',placeholder:false};return;}
   _results[v.vin].vdpImg=img;_results[v.vin].vdpSource=(res&&res.source)||'';
   if(res&&res.placeholder){_results[v.vin].status='placeholder';_results[v.vin].score=null;_results[v.vin].method='placeholder';return;}
-  const sp=v.spyneImg;if(!sp){_results[v.vin].status='error';_results[v.vin].method='no_spyne';return;}
+  const sp=v.spyneImgDirect||v.spyneImg;if(!sp){_results[v.vin].status='error';_results[v.vin].method='no_spyne';return;}
   const norm=u=>{try{const x=new URL(u);return x.origin+x.pathname;}catch{return u;}};
-  if(norm(sp)===norm(img)){_results[v.vin].status='match';_results[v.vin].score=100;_results[v.vin].method='url';}
-  else{const s=await pixelSimilarity(sp,img);_results[v.vin].score=s;_results[v.vin].method='pixel';_results[v.vin].status=s===null?'error':s>=85?'match':'mismatch';}
+  if(norm(sp)===norm(img)){
+    _results[v.vin].status='match'; _results[v.vin].score=100; _results[v.vin].method='url';
+  } else {
+    const px=await pixelSimilarity(sp,img);
+    if(px.score===null){
+      _results[v.vin].status='error';
+      _results[v.vin].method='pixel_fail:'+( px.error||'unknown');
+    } else {
+      _results[v.vin].score=px.score;
+      _results[v.vin].method='pixel';
+      _results[v.vin].status=px.score>=85?'match':'mismatch';
+    }
+  }
 }
 
 async function startCheck(){
@@ -627,7 +671,7 @@ function renderRow(vin){
 function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
   const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
-  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'">⚠ Error</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo</span>'};
+  const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'" style="cursor:help;max-width:200px;overflow:hidden;text-overflow:ellipsis">⚠ '+(r.method?r.method.slice(0,28):'Error')+'</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600">🖼 No Photo</span>'};
   let sh='—';
   if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
   const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
