@@ -120,9 +120,9 @@ tbody tr:hover{background:var(--card2)}
 td{padding:9px 12px;color:var(--t2);vertical-align:middle}
 td:first-child{padding-left:16px}td:last-child{padding-right:16px}
 .img-cell{display:flex;align-items:center;gap:8px}
-.img-thumb{width:64px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--rim);flex-shrink:0;background:var(--card2);cursor:pointer;transition:transform .15s}
+.img-thumb{width:128px;height:92px;object-fit:cover;border-radius:6px;border:1px solid var(--rim);flex-shrink:0;background:var(--card2);cursor:pointer;transition:transform .15s}
 .img-thumb:hover{transform:scale(1.06)}
-.img-missing{width:64px;height:46px;border-radius:6px;border:1px dashed var(--rim2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--t3);background:var(--card2)}
+.img-missing{width:128px;height:92px;border-radius:6px;border:1px dashed var(--rim2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--t3);background:var(--card2)}
 .status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600;white-space:nowrap}
 .s-match{background:rgba(0,200,150,.12);border:1px solid rgba(0,200,150,.3);color:var(--green)}
 .s-mismatch{background:rgba(240,81,110,.1);border:1px solid rgba(240,81,110,.3);color:var(--red)}
@@ -165,7 +165,7 @@ canvas{display:none}
   </div>
   <div class="sp-card">
     <div class="sp-heading">Select Enterprise &amp; Team</div>
-    <div class="sp-sub" id="sp-sub-txt"></div>
+    <div class="sp-sub" id="sp-sub-txt">Select enterprise / team to filter data</div>
     <div style="margin-bottom:24px">
       <button id="sp-fetch-btn" onclick="fetchEnterprises()" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border-radius:10px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -177,6 +177,7 @@ canvas{display:none}
       <div class="sp-ms-wrap">
         <div class="sp-ms-trigger disabled" id="sp-ent-trig" onclick="spMsToggle('ent')">
           <span class="sp-ms-txt" id="sp-ent-txt">Loading…</span>
+          <span id="sp-ent-x" onclick="event.stopPropagation();spMsClear('ent')" style="display:none;font-size:12px;color:var(--t3);padding:2px 4px;border-radius:4px;line-height:1;cursor:pointer" title="Clear">✕</span>
           <svg class="sp-ms-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="sp-ms-dd" id="sp-ent-dd">
@@ -192,6 +193,7 @@ canvas{display:none}
       <div class="sp-ms-wrap">
         <div class="sp-ms-trigger disabled" id="sp-team-trig" onclick="spMsToggle('team')">
           <span class="sp-ms-txt" id="sp-team-txt">Select enterprise first</span>
+          <span id="sp-team-x" onclick="event.stopPropagation();spMsClear('team')" style="display:none;font-size:12px;color:var(--t3);padding:2px 4px;border-radius:4px;line-height:1;cursor:pointer" title="Clear">✕</span>
           <svg class="sp-ms-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="sp-ms-dd" id="sp-team-dd">
@@ -204,7 +206,7 @@ canvas{display:none}
     </div>
     <div class="sp-divider"></div>
     <div class="sp-actions">
-      <span class="sp-all-link" onclick="spGoAll()">Load all VINs without filter</span>
+      <div></div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         <button class="sp-go-btn" id="sp-go-btn" disabled onclick="spGo()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -232,6 +234,10 @@ canvas{display:none}
     <span id="sync-time" style="font-size:11px;font-family:var(--f-mono);color:var(--t3)"></span>
     <button class="icon-btn" onclick="toggleTheme()" id="tbtn">🌙</button>
     <button class="btn btn-ghost" onclick="goHome()" id="home-btn" style="display:none">← Home</button>
+    <button class="btn btn-ghost" onclick="downloadReport()" id="download-btn" style="display:none">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download Report
+    </button>
     <button class="btn btn-ghost" onclick="stopChecking()" id="stop-btn" style="display:none">⏹ Stop</button>
     <button class="btn btn-primary" onclick="startCheck()" id="run-btn">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -262,7 +268,7 @@ canvas{display:none}
   <button class="fchip" data-f="novdp" onclick="setFilter('novdp')">No VDP</button>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
-    <input class="search-input" id="search-inp" placeholder="Search VIN / enterprise…" oninput="renderTable()"/>
+    <input class="search-input" id="search-inp" placeholder="Search VIN…" oninput="renderTable()"/>
   </div>
 </div>
 
@@ -275,8 +281,8 @@ canvas{display:none}
           <th style="min-width:140px">Enterprise</th>
           <th style="min-width:100px">Team</th>
           <th style="min-width:80px">Make/Model</th>
-          <th style="min-width:90px;text-align:center">Spyne Image</th>
-          <th style="min-width:90px;text-align:center">VDP Image</th>
+          <th style="min-width:150px;text-align:center">Spyne Image</th>
+          <th style="min-width:150px;text-align:center">VDP Image</th>
           <th style="min-width:110px;text-align:center">Status</th>
           <th style="min-width:80px;text-align:center">Similarity</th>
           <th style="min-width:100px">Links</th>
@@ -319,6 +325,7 @@ function goHome(){
   // Hide dashboard, show selection page
   ['main-hdr','stats-bar','main-filter-bar','main-page'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('home-btn').style.display='none';
+  document.getElementById('download-btn').style.display='none';
   document.getElementById('tbl-wrap').style.display='none';
   // Reset fetch button
   const btn=document.getElementById('sp-fetch-btn');
@@ -327,7 +334,7 @@ function goHome(){
 }
 
 function init(){
-  document.getElementById('sp-sub-txt').textContent='Click Fetch Enterprise List to begin';
+  document.getElementById('sp-sub-txt').textContent='Select enterprise / team to filter data';
 }
 
 function parseCSVLine(line){
@@ -376,13 +383,13 @@ async function fetchEnterprises(){
     }
     if(!j.enterprises||!j.enterprises.length)throw new Error('No enterprises found');
     clearInterval(ti);
-    _spOpts.ent=j.enterprises;
+    _spOpts.ent=[...j.enterprises].sort((a,b)=>a.name.localeCompare(b.name));
     _spTeamsByEnt={};
     j.enterprises.forEach(e=>{_spTeamsByEnt[e.name]=e.teams||[];});
     btn.style.display='none';
     document.getElementById('sp-ent-trig').classList.remove('disabled');
     document.getElementById('sp-ent-txt').textContent=_spOpts.ent.length+' enterprises';
-    sub.textContent=(j.totalVins||0).toLocaleString()+' total VINs · select enterprise to filter';
+    sub.textContent='Select enterprise / team to filter data';
     spMsBuild('ent');
   }catch(e){
     clearInterval(ti);
@@ -400,8 +407,8 @@ function spMsToggle(type){
   if(!open){
     if(type==='team'){
       const tc={};
-      _spSel.ent.forEach(en=>{(_spTeamsByEnt[en]||[]).forEach(t=>{tc[t.name]=(tc[t.name]||0)+t.count;});});
-      _spOpts.team=Object.entries(tc).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count}));
+      _spSel.ent.forEach(en=>{(_spTeamsByEnt[en]||[]).sort((a,b)=>a.name.localeCompare(b.name)).forEach(t=>{tc[t.name]=(tc[t.name]||0)+t.count;});});
+      _spOpts.team=Object.entries(tc).sort((a,b)=>a[0].localeCompare(b[0])).map(([name,count])=>({name,count}));
     }
     dd.classList.add('open');tr.classList.add('open');
     setTimeout(()=>{const q=document.getElementById('sp-'+type+'-q');if(q)q.focus();},40);
@@ -436,8 +443,9 @@ function spMsToggleOpt(type,name){
 
 function spMsClear(type){
   _spSel[type].clear();
-  if(type==='ent'){_spSel.team.clear();spUpdateChips('team');spTxtUpdate('team');}
+  if(type==='ent'){_spSel.team.clear();spUpdateChips('team');spTxtUpdate('team');const tx=document.getElementById('sp-team-x');if(tx)tx.style.display='none';}
   spMsBuild(type);spUpdateChips(type);spTxtUpdate(type);spUpdatePreview();
+  const xBtn=document.getElementById('sp-'+type+'-x');if(xBtn)xBtn.style.display='none';
 }
 
 function spTxtUpdate(type){
@@ -445,6 +453,7 @@ function spTxtUpdate(type){
   if(sel.size===0){el.textContent=type==='ent'?(_spOpts.ent.length+' enterprises'):'Select team (optional)';el.classList.remove('sel');}
   else{el.textContent=sel.size===1?[...sel][0]:sel.size+(type==='ent'?' enterprises':' teams')+' selected';el.classList.add('sel');}
   const c=document.getElementById('sp-'+type+'-cnt');if(c)c.textContent=sel.size?sel.size+' selected':'None selected';
+  const xBtn=document.getElementById('sp-'+type+'-x');if(xBtn)xBtn.style.display=sel.size>0?'inline':'none';
 }
 
 function spUpdateChips(type){
@@ -486,6 +495,7 @@ async function _enterDashboard(en,tn,label){
     lp.classList.remove('show');
     ['main-hdr','stats-bar','main-filter-bar','main-page'].forEach(id=>document.getElementById(id).style.display='');
     document.getElementById('home-btn').style.display='inline-flex';
+    document.getElementById('download-btn').style.display='inline-flex';
     _loadVins(vins);
   }catch(e){
     document.getElementById('lp-title').textContent='Failed to load data';
@@ -504,7 +514,7 @@ async function _fetchVins(en,tn){
     const j=await r.json();if(!j.rows||!j.rows.length)throw new Error('No VINs');
     if(j.lastSynced)document.getElementById('sync-time').textContent='Synced '+new Date(j.lastSynced).toLocaleTimeString();
     const seen=new Set();
-    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:r.thumbnail||r.thumbnail_url||'',vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
+    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{const t=r.thumbnail||r.thumbnail_url||'';const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);return m?m[0]:t;})(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
     if(en&&en.length)vins=vins.filter(v=>en.includes(v.entName));
     if(tn&&tn.length)vins=vins.filter(v=>tn.includes(v.teamName));
     _allVins=vins;clearInterval(tick);return vins;
@@ -571,6 +581,20 @@ async function startCheck(){
   }
   _running=false;document.getElementById('run-btn').style.display='inline-flex';document.getElementById('stop-btn').style.display='none';
 }
+
+function downloadReport(){
+  const rows=[['VIN','Enterprise','Team','Year','Make','Model','Status','Similarity','Method','Spyne Image URL','VDP Image URL','VDP URL','Console URL']];
+  _vins.forEach(v=>{
+    const r=_results[v.vin]||{};
+    const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
+    rows.push([v.vin,v.entName,v.teamName,v.year,v.make,v.model,r.status||'',r.score!=null?r.score+'%':'',r.method||'',v.spyneImg||'',r.vdpImg||'',v.vdpUrl||'',cu]);
+  });
+  const csv=rows.map(r=>r.map(c=>'"'+(String(c).replace(/"/g,'""'))+'"').join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='vdp-check-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();URL.revokeObjectURL(a.href);
+}
 function stopChecking(){_stopFlag=true;}
 
 function updateStats(){
@@ -588,7 +612,7 @@ function setFilter(f){_filter=f;document.querySelectorAll('.fchip').forEach(c=>c
 
 function renderTable(){
   const q=document.getElementById('search-inp').value.toLowerCase();
-  const fv=_vins.filter(v=>{const r=_results[v.vin]||{};if(_filter!=='all'&&r.status!==_filter)return false;if(q&&!v.vin.toLowerCase().includes(q)&&!v.entName.toLowerCase().includes(q)&&!v.teamName.toLowerCase().includes(q))return false;return true;});
+  const fv=_vins.filter(v=>{const r=_results[v.vin]||{};if(_filter!=='all'&&r.status!==_filter)return false;if(q&&!v.vin.toLowerCase().includes(q))return false;return true;});
   const tb=document.getElementById('tbl-body');
   if(!fv.length){tb.innerHTML='<tr><td colspan="9" class="empty">No VINs match the current filter</td></tr>';return;}
   tb.innerHTML=fv.map((v,i)=>rowHTML(v,i)).join('');
