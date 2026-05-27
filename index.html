@@ -548,13 +548,19 @@ async function _fetchVins(en,tn){
     const seen=new Set();
     let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{
         const t=r.thumbnail||r.thumbnail_url||'';
-        // Upgrade proxy resolution for display: 320x180 -> 640x480
-        return t.replace(/\/unsafe\/320x180\//,'/unsafe/640x480/').replace(/\/320x180\/smart\//,'/640x480/smart/');
+        if(!t) return '';
+        const sm=t.indexOf('spyne-media/');
+        if(sm>=0 && t.indexOf('media.spyne.ai/')>=0)
+          return 'https://media.spyneai.com/unsafe/640x480/filters:format(webp)/spyne-media/'+t.slice(sm+12);
+        return t.split('/unsafe/320x180/').join('/unsafe/640x480/').split('/320x180/smart/').join('/640x480/smart/');
       })(),spyneImgDirect:(()=>{
         const t=r.thumbnail||r.thumbnail_url||'';
-        // Extract raw S3 URL for pixel comparison (no proxy)
-        const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);
-        return m?m[0]:'';
+        if(!t) return '';
+        const s3start=t.indexOf('https://spyne-media.s3');
+        if(s3start>=0){const e=t.indexOf(')',s3start);return t.slice(s3start,e>0?e:s3start+200).split(/s/)[0];}
+        const sm=t.indexOf('spyne-media/');
+        if(sm>=0) return 'https://spyne-media.s3.amazonaws.com/'+t.slice(sm+12).split(/[s")']/)[0];
+        return '';
       })(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
     if(en&&en.length)vins=vins.filter(v=>en.includes(v.entName));
     if(tn&&tn.length)vins=vins.filter(v=>tn.includes(v.teamName));
