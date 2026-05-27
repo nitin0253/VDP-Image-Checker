@@ -47,7 +47,19 @@ export default async function handler(req, res) {
     }
   }
 
-  if (!html) return res.status(200).json({ image: null, placeholder: false, error: lastError || 'all_strategies_failed', httpStatus: lastStatus });
+  if (!html) {
+    // All strategies failed — try to extract image from page metadata without loading full HTML
+    // Some sites 403 on HTML but allow direct image CDN access
+    const fallback = await tryDirectImageExtraction(targetUrl.href, lastStatus);
+    if (fallback) return res.status(200).json(fallback);
+
+    // Classify the error for better UX
+    const errMsg = lastStatus === 403 ? 'VDP site blocks automated access (403)' :
+                   lastStatus === 429 ? 'Rate limited by VDP site (429)' :
+                   lastStatus === 404 ? 'VDP page not found (404)' :
+                   lastError || 'all_strategies_failed';
+    return res.status(200).json({ image: null, placeholder: false, error: errMsg, httpStatus: lastStatus });
+  }
 
   const result = extractHeroImage(html, targetUrl.href);
   return res.status(200).json(result);
@@ -142,6 +154,55 @@ function scoreImageUrl(url) {
   if (/\.(svg|gif|ico)/i.test(u.split('?')[0])) score -= 200;
 
   return score;
+}
+
+// ── DIRECT IMAGE EXTRACTION FALLBACK ─────────────────────────────
+// When the VDP page itself is blocked (403), try alternative methods
+async function tryDirectImageExtraction(pageUrl, httpStatus) {
+  try {
+    const u = new URL(pageUrl);
+
+    // Method 1: Try fetching just the OG tags via a lightweight HEAD+tiny GET
+    // Some CDNs serve a small metadata-only version
+    const metaResp = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+
+    if (metaResp && metaResp.ok) {
+      const text = await metaResp.text();
+      const og = text.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+               || text.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+      if (og?.[1]) {
+        const imgUrl = resolveUrl(og[1], pageUrl);
+        if (isRealImage(imgUrl) && !isBrandLogoOrPlaceholder(imgUrl, text)) {
+          return { image: imgUrl, source: 'og:image-fb-crawl', placeholder: false };
+        }
+      }
+    }
+
+    // Method 2: Known dealer platform CDN patterns
+    // DealerSocket / Dealer.com — images at predictable paths
+    // Extract stock number or VIN from URL and try CDN directly
+    const vinMatch = pageUrl.match(/[A-HJ-NPR-Z0-9]{17}/i);
+    if (vinMatch) {
+      const vin = vinMatch[0].toUpperCase();
+      // Dealer.com CDN pattern
+      const dealerComUrl = `https://pictures.dealer.com/${u.hostname.split('.')[0]}/`;
+      // Try spincar CDN which many dealers use
+      const spincarUrl = `https://cdn.spincar.com/swiper-exp/${u.hostname}/${vin}/0/`;
+      for (const tryUrl of [spincarUrl]) {
+        const r = await fetch(tryUrl, { signal: AbortSignal.timeout(5000) }).catch(() => null);
+        if (r && r.ok && r.headers.get('content-type')?.includes('image')) {
+          return { image: tryUrl, source: 'spincar-direct', placeholder: false };
+        }
+      }
+    }
+  } catch {}
+  return null;
 }
 
 // ── MAIN EXTRACTOR ────────────────────────────────────────────────
