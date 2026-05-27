@@ -297,7 +297,7 @@ canvas{display:none}
     <button class="lb-close" onclick="closeLb()">✕</button>
     <div class="lb-title" id="lb-title">Image Comparison</div>
     <div class="lb-pair">
-      <div class="lb-side"><div class="lb-side-label">🟣 Spyne (thumbnail)</div><div id="lb-spyne"></div><div class="lb-url" id="lb-spyne-url"></div></div>
+      <div class="lb-side"><div class="lb-side-label">🟣 Spyne (Output Image)</div><div id="lb-spyne"></div><div class="lb-url" id="lb-spyne-url"></div></div>
       <div class="lb-side"><div class="lb-side-label">🌐 VDP (scraped)</div><div id="lb-vdp"></div><div class="lb-url" id="lb-vdp-url"></div></div>
     </div>
     <div class="lb-status" id="lb-status"></div>
@@ -306,12 +306,11 @@ canvas{display:none}
 <canvas id="cv"></canvas>
 
 <script>
-
-
 const API = '/api/data';
 const VDP_IMAGE_API = '/api/vdp-image';
 const ENT_API = '/api/enterprises';
-const ENT_CSV = 'https://metabase.spyne.ai/public/question/7d25d6cf-85c5-43e4-8033-ca09b9a399d8.csv';
+// Use VIN data CSV to build enterprise list — guarantees all enterprises are covered
+const ENT_CSV = 'https://metabase.spyne.ai/public/question/2b76ef6d-65a5-4b33-8de8-e7ec1d6cdb4e.csv';
 
 let _vins=[], _results={}, _filter='all', _running=false, _stopFlag=false, _allVins=[];
 const _spSel={ent:new Set(),team:new Set()}, _spOpts={ent:[],team:[]};
@@ -375,6 +374,7 @@ async function parseEnterprisesFromCSV(){
   if(rows.length<2)throw new Error('Empty CSV');
   const h=parseCSVLine(rows[0]);
   const iE=h.indexOf('enterpriseId'),iN=h.indexOf('enterprise_name'),iT=h.indexOf('teamId'),iTN=h.indexOf('team_name'),iS=h.indexOf('customer_segment');
+  if(iE<0||iN<0) throw new Error('Missing columns. Got: '+h.slice(0,8).join(', '));
   const m={};
   rows.slice(1).forEach(line=>{
     if(!line.trim())return;
@@ -546,7 +546,16 @@ async function _fetchVins(en,tn){
     const j=await r.json();if(!j.rows||!j.rows.length)throw new Error('No VINs');
     if(j.lastSynced)document.getElementById('sync-time').textContent='Synced '+new Date(j.lastSynced).toLocaleTimeString();
     const seen=new Set();
-    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:r.thumbnail||r.thumbnail_url||'',spyneImgDirect:(()=>{const t=r.thumbnail||r.thumbnail_url||'';const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);return m?m[0]:'';})(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
+    let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{
+        const t=r.thumbnail||r.thumbnail_url||'';
+        // Upgrade proxy resolution for display: 320x180 -> 640x480
+        return t.replace(/\/unsafe\/320x180\//,'/unsafe/640x480/').replace(/\/320x180\/smart\//,'/640x480/smart/');
+      })(),spyneImgDirect:(()=>{
+        const t=r.thumbnail||r.thumbnail_url||'';
+        // Extract raw S3 URL for pixel comparison (no proxy)
+        const m=t.match(/https:\/\/spyne-media\.s3[^)\s]*/);
+        return m?m[0]:'';
+      })(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
     if(en&&en.length)vins=vins.filter(v=>en.includes(v.entName));
     if(tn&&tn.length)vins=vins.filter(v=>tn.includes(v.teamName));
     _allVins=vins;clearInterval(tick);return vins;
@@ -790,6 +799,9 @@ function toggleTheme(){
 (()=>{const s=localStorage.getItem('img-checker-theme');if(s){document.documentElement.setAttribute('data-theme',s);const t=s==='dark'?'🌙':'☀️';const b1=document.getElementById('tbtn');if(b1)b1.textContent=t;const b2=document.getElementById('sp-tbtn');if(b2)b2.textContent=t;}})();
 
 init();
+
+
+
 
 
 </script>
