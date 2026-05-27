@@ -70,8 +70,11 @@ export default async function handler(req, res) {
   let lastError = null;
   let lastStatus = null;
 
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   for (let si = 0; si < strategies.length; si++) {
     try {
+      // Small gap between strategies to avoid hammering
+      if (si > 0) await sleep(800);
       const response = await strategies[si]();
       lastStatus = response.status;
       if (response.ok) {
@@ -79,6 +82,12 @@ export default async function handler(req, res) {
         break;
       }
       lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies.length})`;
+      // 429 rate limit — wait longer before next attempt
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('retry-after') || '5');
+        await sleep(Math.min(retryAfter * 1000, 8000));
+      }
+      // 404/410 — page doesn't exist, no point retrying
       if (response.status === 404 || response.status === 410) break;
     } catch (e) {
       lastError = `${e.message} (strategy ${si+1})`;
@@ -138,6 +147,10 @@ function isBrandLogoOrPlaceholder(url, html) {
   // Genesis: "genesis-logo", "genesis_logo", "genesis-badge", paths like /genesis/logo
   if (/genesis[_\-.]*(logo|badge|emblem|wings|crest|icon|brand)/i.test(u)) return true;
   if (/[_\-.]genesis[_\-.]*(logo|badge|wing)/i.test(u)) return true;
+  // Genesis dealer sites — logo served from these specific paths
+  if (/genesisof[^/]+\.com.*\/(?:sites|assets|images|wp-content)\/[^?]*(?:logo|brand|badge)/i.test(u)) return true;
+  // Any image where the path segment is just the brand name + extension (e.g. /genesis.png, /genesis-brand.jpg)
+  if (/\/genesis\.(png|jpg|jpeg|webp|svg)/i.test(u)) return true;
   // Other OEM logos
   if (/(toyota|honda|ford|chevrolet|gmc|dodge|ram|jeep|chrysler|bmw|mercedes|audi|lexus|acura|infiniti|cadillac|buick|lincoln|volvo|subaru|mazda|hyundai|kia|nissan|volkswagen|porsche|jaguar|landrover|maserati|ferrari|lamborghini)[_\-.]*(logo|badge|emblem|icon|brand|crest)/i.test(u)) return true;
 
