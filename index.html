@@ -571,94 +571,53 @@ async function fetchVdpImage(url){
 }
 
 async function pixelSimilarity(a, b){
-  const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
-  // Use larger canvas for better accuracy
-  const S=64;
-  cv.width=S*2; cv.height=S;
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
+  cv.width=S; cv.height=S;
 
-  async function li(src, useCors){
+  function loadImgData(src){
     return new Promise((res,rej)=>{
       const img=new Image();
-      if(useCors) img.crossOrigin='anonymous';
+      img.crossOrigin='anonymous';
       img.onload=()=>{
-        try{
-          // Draw both images side by side for comparison
-          ctx.clearRect(0,0,S*2,S);
-          ctx.drawImage(img,0,0,S,S);
-          res(ctx.getImageData(0,0,S,S).data);
+        try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
+        catch{
+          // CORS blocked — try proxy
+          if(src.includes('spyne-media.s3')){
+            const p=new Image();p.crossOrigin='anonymous';
+            p.onload=()=>{try{ctx.clearRect(0,0,S,S);ctx.drawImage(p,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}catch(e){rej(e);}};
+            p.onerror=()=>rej(new Error('proxy_fail'));
+            p.src='https://media.spyneai.com/unsafe/64x46/'+src;
+          } else rej(new Error('cors_blocked'));
         }
-        catch(e){rej(new Error('taint:'+e.message));}
       };
       img.onerror=()=>rej(new Error('load_fail'));
       img.src=src;
-      setTimeout(()=>rej(new Error('timeout')),10000);
+      setTimeout(()=>rej(new Error('timeout')),8000);
     });
   }
 
-  async function loadImg(src){
-    try{ return await li(src, true); }
-    catch(e){
-      if(src.includes('spyne-media.s3')){
-        const proxy='https://media.spyneai.com/unsafe/128x92/'+src;
-        try{ return await li(proxy, true); } catch{}
-      }
-      throw e;
-    }
-  }
-
   try{
-    const[dA,dB]=await Promise.all([loadImg(a),loadImg(b)]);
+    // Load both images in parallel
+    const[dA,dB]=await Promise.all([loadImgData(a),loadImgData(b)]);
 
-    // Center-weighted comparison:
-    // Cars occupy the middle ~60% of frame, background is the border
-    // Weight center pixels 3x more than edge pixels
-    const margin = Math.floor(S * 0.15); // 15% border = background
-    let totalDiff=0, totalWeight=0;
-
+    // Center-weighted diff: border pixels (background) weighted 1, center 3
+    const m=Math.floor(S*0.2); // 20% margin
+    let diff=0, weight=0;
     for(let y=0;y<S;y++){
       for(let x=0;x<S;x++){
-        const idx=(y*S+x)*4;
-        const diff=Math.abs(dA[idx]-dB[idx])+Math.abs(dA[idx+1]-dB[idx+1])+Math.abs(dA[idx+2]-dB[idx+2]);
-        // Higher weight for center pixels (where the car is)
-        const isEdge=(x<margin||x>=S-margin||y<margin||y>=S-margin);
-        const weight=isEdge?1:3;
-        totalDiff+=diff*weight;
-        totalWeight+=weight*3*255;
+        const i=(y*S+x)*4;
+        const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+        const w=(x<m||x>=S-m||y<m||y>=S-m)?1:3;
+        diff+=d*w; weight+=w*765; // 765=3*255
       }
     }
-
-    const raw=Math.round((1-totalDiff/totalWeight)*100);
-
-    // Apply correction: background similarity inflates scores
-    // If raw is between 65-90, penalize by checking if there's a large uniform region
-    // (backgrounds tend to be uniform; real car differences show in texture)
-    let corrected=raw;
-    if(raw>=65&&raw<90){
-      // Check color variance in center region — low variance = background match, not car match
-      let varSum=0;
-      const cx=Math.floor(S/2), cy=Math.floor(S/2), r=Math.floor(S*0.25);
-      let count=0;
-      for(let y=cy-r;y<cy+r;y++){
-        for(let x=cx-r;x<cx+r;x++){
-          const i=(y*S+x)*4;
-          const da=Math.abs(dA[i]-dA[i+1])+Math.abs(dA[i]-dA[i+2]); // color saturation A
-          const db=Math.abs(dB[i]-dB[i+1])+Math.abs(dB[i]-dB[i+2]); // color saturation B
-          varSum+=Math.abs(da-db);
-          count++;
-        }
-      }
-      const colorDivergence=varSum/(count*255);
-      // If significant color divergence in center, penalize the score
-      if(colorDivergence>0.08) corrected=Math.round(raw*(1-colorDivergence*0.5));
-    }
-
-    return{score:Math.max(0,corrected), method:'pixel'};
+    return{score:Math.round((1-diff/weight)*100)};
   }catch(e){
-    return{score:null, error:e.message};
+    return{score:null,error:e.message};
   }
 }
 
-const _dlh={};const _domain429={};let DG=1500,GG=300,MR=2,RD=4000;
+const _dlh={};const _domain429={};let DG=1200,GG=100,MR=2,RD=3000;
 function getDomain(u){try{return new URL(u).hostname;}catch{return u;}}
 async function waitForDomain(d){
   const gap=(_domain429[d]||0)>2?5000:DG; // 5s gap for sites that 429'd
