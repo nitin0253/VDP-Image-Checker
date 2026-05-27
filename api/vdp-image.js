@@ -18,27 +18,53 @@ export default async function handler(req, res) {
 
   // Try multiple fetch strategies in order
   const strategies = [
-    // Strategy 1: Full browser headers
+    // Strategy 1: Full Chrome browser headers
     () => fetch(targetUrl.href, {
       headers: BROWSER_HEADERS(targetUrl),
       redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     }),
-    // Strategy 2: Googlebot (some sites allow scrapers but block Vercel IPs)
+    // Strategy 2: Different Chrome version + cookies cleared
     () => fetch(targetUrl.href, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     }),
-    // Strategy 3: Try the mobile version (lighter pages, less JS gating)
+    // Strategy 3: Googlebot
     () => fetch(targetUrl.href, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    }),
+    // Strategy 4: Mobile Safari (bypasses some desktop bot detection)
+    () => fetch(targetUrl.href, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': targetUrl.origin + '/',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    }),
+    // Strategy 5: Plain fetch with minimal headers (some sites block over-specified headers)
+    () => fetch(targetUrl.href, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(15000),
@@ -49,17 +75,19 @@ export default async function handler(req, res) {
   let lastError = null;
   let lastStatus = null;
 
-  for (const strategy of strategies) {
+  for (let si = 0; si < strategies.length; si++) {
     try {
-      const response = await strategy();
+      const response = await strategies[si]();
       lastStatus = response.status;
       if (response.ok) {
         html = await response.text();
         break;
       }
-      lastError = `VDP returned ${response.status}`;
+      lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies.length})`;
+      // 400/403/429 — try next strategy; 404/410 — no point retrying
+      if (response.status === 404 || response.status === 410) break;
     } catch (e) {
-      lastError = e.message;
+      lastError = `${e.message} (strategy ${si+1})`;
     }
   }
 
