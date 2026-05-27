@@ -691,7 +691,18 @@ async function fetchVdpImageWithRetry(url){
 async function processVdpResult(v,res){
   const img=res&&res.image;
   if(!img){
-    _results[v.vin]={status:'error',vdpImg:'',score:null,method:(res&&res.error)||'no_image_found',placeholder:false};
+    const errMsg=(res&&res.error)||'no_image_found';
+    const is403=errMsg.includes('403')||errMsg.includes('403');
+    const isTimeout=errMsg.includes('timeout')||errMsg.includes('timed out');
+    _results[v.vin]={
+      status:'error',
+      vdpImg:'',
+      score:null,
+      method: is403 ? 'VDP site blocks automated access (403)' :
+              isTimeout ? 'VDP site too slow / timed out' :
+              errMsg,
+      placeholder:false
+    };
     return;
   }
   _results[v.vin].vdpImg=img;
@@ -802,6 +813,12 @@ function renderRow(vin){
   row.outerHTML=rowHTML(v,_vins.indexOf(v));
 }
 
+function _imgErr(el){
+  el.onerror=null;
+  const src=el.getAttribute('data-src')||el.src;
+  if(src) el.src='/api/image-proxy?url='+encodeURIComponent(src);
+  else el.style.display='none';
+}
 function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
   const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
@@ -814,8 +831,9 @@ function rowHTML(v,i){
   if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
   const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
   const spyneSrc=v.spyneImg||'';
-  const spyneProxy='/api/image-proxy?url='+encodeURIComponent(spyneSrc);
-  const sc=spyneSrc?'<div class="img-cell"><img class="img-thumb" src="'+spyneSrc+'" loading="lazy" '+la+' onerror="if(!this.dataset.tried){this.dataset.tried=1;this.src=\''+spyneProxy+'\';}" ></div>':'<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
+  const sc=spyneSrc
+    ? '<div class="img-cell"><img class="img-thumb" src="'+spyneSrc+'" loading="lazy" '+la+' onerror="_imgErr(this)" data-src="'+spyneSrc.replace(/&/g,'&amp;')+'"></div>'
+    : '<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
   const vc=r.vdpImg?'<div class="img-cell"><img class="img-thumb" src="'+r.vdpImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+' style="font-size:12px;color:var(--t3)">'+(r.status==='pending'||r.status==='checking'?'⏳':'—')+'</div></div>';
   return '<tr data-vin="'+v.vin+'"><td><div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-family:var(--f-mono);color:var(--t3)">'+(i+1)+'</span><span style="font-family:var(--f-mono);font-size:10px;color:var(--t1)">'+(v.vin||'—')+'</span></div></td><td style="font-size:11px">'+(v.entName||'—')+'</td><td style="font-size:10px;color:var(--t3)">'+(v.teamName||'—')+'</td><td style="font-size:10px">'+([v.year,v.make,v.model].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+sc+'</td><td style="text-align:center">'+vc+'</td><td style="text-align:center">'+(bm[r.status]||bm.pending)+'</td><td>'+sh+'</td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+(v.vdpUrl?'<a class="link-pill" href="'+v.vdpUrl+'" target="_blank">VDP</a>':'')+(cu?'<a class="link-pill" href="'+cu+'" target="_blank">Console</a>':'')+'</div></td></tr>';
 }
@@ -846,6 +864,10 @@ function toggleTheme(){
 (()=>{const s=localStorage.getItem('img-checker-theme');if(s){document.documentElement.setAttribute('data-theme',s);const t=s==='dark'?'🌙':'☀️';const b1=document.getElementById('tbtn');if(b1)b1.textContent=t;const b2=document.getElementById('sp-tbtn');if(b2)b2.textContent=t;}})();
 
 init();
+
+
+
+
 
 </script>
 </body>
