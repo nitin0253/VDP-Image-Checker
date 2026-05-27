@@ -575,66 +575,86 @@ document.addEventListener('click',e=>{
 });
 
 async function fetchVdpImage(url){
-  try{const r=await fetch(VDP_IMAGE_API+'?url='+encodeURIComponent(url),{signal:AbortSignal.timeout(20000)});if(!r.ok)return{image:null,error:'HTTP '+r.status};return await r.json();}
-  catch(e){return{image:null,error:e.message};}
+  try{
+    const sig=_runAbort?_runAbort.signal:AbortSignal.timeout(20000);
+    const r=await fetch(VDP_IMAGE_API+'?url='+encodeURIComponent(url),{signal:sig});
+    if(!r.ok)return{image:null,error:'HTTP '+r.status};
+    return await r.json();
+  }catch(e){
+    if(e.name==='AbortError')return{image:null,error:'stopped'};
+    return{image:null,error:e.message};
+  }
 }
 
 async function pixelSimilarity(a, b){
   const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
   cv.width=S; cv.height=S;
 
-  // Load image pixels — tries direct CORS first, then proxied via our API
+  // Route through server proxy for any URL that needs it
+  function proxyUrl(src){
+    // Spyne media proxy URLs — always route through our proxy for canvas access
+    if(src.includes('media.spyneai.com')||src.includes('media.spyne.ai')) return '/api/image-proxy?url='+encodeURIComponent(src);
+    // Direct S3 — use Spyne's own CDN resize instead of our proxy (faster)
+    if(src.includes('spyne-media.s3')) return 'https://media.spyneai.com/unsafe/64x46/'+src;
+    // Everything else — try direct first, fallback to our proxy
+    return null;
+  }
+
   async function loadPixels(src){
-    // Try 1: direct with crossOrigin (works for Spyne S3 images)
-    try{
-      const d = await new Promise((res,rej)=>{
-        const img=new Image(); img.crossOrigin='anonymous';
-        img.onload=()=>{
-          try{ ctx.clearRect(0,0,S,S); ctx.drawImage(img,0,0,S,S); res(ctx.getImageData(0,0,S,S).data); }
-          catch(e){ rej(e); }
-        };
-        img.onerror=()=>rej(new Error('load_fail'));
-        // Spyne proxy for direct S3 URLs
-        img.src=src.includes('spyne-media.s3')?'https://media.spyneai.com/unsafe/64x46/'+src:src;
-        setTimeout(()=>rej(new Error('timeout')),6000);
-      });
-      return {data:d};
-    }catch(e1){
-      // Try 2: route through our server-side proxy to bypass CORS
+    const directProxy = proxyUrl(src);
+
+    // Attempt 1: use the appropriate proxy URL if we know it
+    if(directProxy){
       try{
-        const proxyUrl='/api/image-proxy?url='+encodeURIComponent(src);
-        const d = await new Promise((res,rej)=>{
-          const img=new Image(); img.crossOrigin='anonymous';
-          img.onload=()=>{
-            try{ ctx.clearRect(0,0,S,S); ctx.drawImage(img,0,0,S,S); res(ctx.getImageData(0,0,S,S).data); }
-            catch(e){ rej(e); }
-          };
-          img.onerror=()=>rej(new Error('proxy_load_fail'));
-          img.src=proxyUrl;
-          setTimeout(()=>rej(new Error('proxy_timeout')),8000);
-        });
-        return {data:d, proxied:true};
-      }catch(e2){
-        return {data:null, error:e2.message};
+        const d=await tryLoad(directProxy);
+        return{data:d, proxied:true};
+      }catch{}
+    }
+
+    // Attempt 2: direct CORS
+    try{
+      const d=await tryLoad(src);
+      return{data:d};
+    }catch{}
+
+    // Attempt 3: our server proxy (for anything not already proxied)
+    if(!directProxy){
+      try{
+        const d=await tryLoad('/api/image-proxy?url='+encodeURIComponent(src));
+        return{data:d, proxied:true};
+      }catch(e){
+        return{data:null, error:e.message};
       }
     }
+
+    return{data:null, error:'cors_blocked'};
+  }
+
+  function tryLoad(url){
+    return new Promise((res,rej)=>{
+      const img=new Image(); img.crossOrigin='anonymous';
+      img.onload=()=>{
+        try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
+        catch(e){rej(new Error('canvas_blocked:'+e.message));}
+      };
+      img.onerror=()=>rej(new Error('load_fail'));
+      img.src=url;
+      setTimeout(()=>rej(new Error('timeout')),10000);
+    });
   }
 
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
+    if(!rA.data||!rB.data) return{score:null, error:(rA.error||rB.error||'pixel_read_failed')};
 
-    if(!rA.data||!rB.data){
-      return{score:null, error:(rA.error||rB.error||'pixel_read_failed')};
-    }
-
-    // Center-weighted pixel diff
-    const m=Math.floor(S*0.2);
+    // Compare center 70% of image — skip watermark strips at top/bottom
+    const topSkip=Math.floor(S*0.15), botSkip=Math.floor(S*0.15), edgeSkip=Math.floor(S*0.1);
     let diff=0, weight=0;
-    for(let y=0;y<S;y++){
-      for(let x=0;x<S;x++){
+    for(let y=topSkip;y<S-botSkip;y++){
+      for(let x=edgeSkip;x<S-edgeSkip;x++){
         const i=(y*S+x)*4;
         const d=Math.abs(rA.data[i]-rB.data[i])+Math.abs(rA.data[i+1]-rB.data[i+1])+Math.abs(rA.data[i+2]-rB.data[i+2]);
-        const w=(x<m||x>=S-m||y<m||y>=S-m)?1:3;
+        const w=(y>S*0.25&&y<S*0.75&&x>S*0.2&&x<S*0.8)?3:1;
         diff+=d*w; weight+=w*765;
       }
     }
@@ -646,6 +666,7 @@ async function pixelSimilarity(a, b){
 }
 
 const _dlh={};const _domain429={};let DG=1200,GG=100,MR=2,RD=3000;
+let _runAbort=null; // AbortController for current run
 function getDomain(u){try{return new URL(u).hostname;}catch{return u;}}
 async function waitForDomain(d){
   const gap=(_domain429[d]||0)>2?5000:DG; // 5s gap for sites that 429'd
@@ -704,7 +725,7 @@ async function processVdpResult(v,res){
   _results[v.vin].score=px.score;
   _results[v.vin].method=px.method||'pixel';
 
-  if(px.score>=85){
+  if(px.score>=72){
     _results[v.vin].status='match';
   } else if(px.score>=50){
     _results[v.vin].status='mismatch';
@@ -716,6 +737,7 @@ async function processVdpResult(v,res){
 
 async function startCheck(){
   if(_running)return;_running=true;_stopFlag=false;
+  _runAbort=new AbortController();
   document.getElementById('run-btn').style.display='none';document.getElementById('stop-btn').style.display='inline-flex';
   const tc=_vins.filter(v=>v.vdpUrl);let done=0;
   for(const v of tc){
@@ -745,7 +767,13 @@ function downloadReport(){
   a.download='vdp-check-'+new Date().toISOString().slice(0,10)+'.csv';
   a.click();URL.revokeObjectURL(a.href);
 }
-function stopChecking(){_stopFlag=true;}
+function stopChecking(){
+  _stopFlag=true;
+  _running=false;
+  if(_runAbort){_runAbort.abort();_runAbort=null;}
+  document.getElementById('run-btn').style.display='inline-flex';
+  document.getElementById('stop-btn').style.display='none';
+}
 
 function updateStats(){
   const c={match:0,mismatch:0,pending:0,error:0,novdp:0,placeholder:0};
@@ -785,7 +813,9 @@ function rowHTML(v,i){
   let sh='—';
   if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
   const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
-  const sc=v.spyneImg?'<div class="img-cell"><img class="img-thumb" src="'+v.spyneImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
+  const spyneSrc=v.spyneImg||'';
+  const spyneProxy='/api/image-proxy?url='+encodeURIComponent(spyneSrc);
+  const sc=spyneSrc?'<div class="img-cell"><img class="img-thumb" src="'+spyneSrc+'" loading="lazy" '+la+' onerror="if(!this.dataset.tried){this.dataset.tried=1;this.src=\''+spyneProxy+'\';}" ></div>':'<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
   const vc=r.vdpImg?'<div class="img-cell"><img class="img-thumb" src="'+r.vdpImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+' style="font-size:12px;color:var(--t3)">'+(r.status==='pending'||r.status==='checking'?'⏳':'—')+'</div></div>';
   return '<tr data-vin="'+v.vin+'"><td><div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-family:var(--f-mono);color:var(--t3)">'+(i+1)+'</span><span style="font-family:var(--f-mono);font-size:10px;color:var(--t1)">'+(v.vin||'—')+'</span></div></td><td style="font-size:11px">'+(v.entName||'—')+'</td><td style="font-size:10px;color:var(--t3)">'+(v.teamName||'—')+'</td><td style="font-size:10px">'+([v.year,v.make,v.model].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+sc+'</td><td style="text-align:center">'+vc+'</td><td style="text-align:center">'+(bm[r.status]||bm.pending)+'</td><td>'+sh+'</td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+(v.vdpUrl?'<a class="link-pill" href="'+v.vdpUrl+'" target="_blank">VDP</a>':'')+(cu?'<a class="link-pill" href="'+cu+'" target="_blank">Console</a>':'')+'</div></td></tr>';
 }
