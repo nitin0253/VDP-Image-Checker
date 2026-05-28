@@ -90,8 +90,10 @@ function isBrandLogoOrPlaceholder(url, html) {
   if (/no.?image|no.?photo|coming.?soon|placeholder|default.?vehicle|stock.?photo|generic|unavailable/i.test(u)) return true;
   if (/ccdce9f9|coming.?soon|comingsoon/i.test(u)) return true;
   if (html && /images\s+coming\s+soon/i.test(html)) return true;
-  // "Coming Soon" car cover images — solid blue/grey drape over the car
-  if (/coming.?soon|car.?cover|vehicle.?cover|under.?cover|unveil/i.test(u)) return true;
+  // "Coming Soon" / car cover images
+  if (/coming.?soon|car.?cover|vehicle.?cover|under.?cover|unveil|comingsoon/i.test(u)) return true;
+  // Check HTML for "COMING SOON" text overlay on image
+  if (html && /COMING\s+SOON|coming-soon-image|img-coming-soon/i.test(html)) return true;
 
   // Logo filename patterns
   if (/\/(logo|logos|icon|favicon|badge|emblem|brand|seal|crest|manufacturer)[^/]*\.(png|jpg|jpeg|webp|svg)/i.test(u)) return true;
@@ -151,6 +153,8 @@ function scoreImageUrl(url) {
 
   // Negative signals
   if (isBrandLogoOrPlaceholder(u, null)) score -= 200;
+  // Coming soon cover images have specific visual patterns in alt text
+  if (/coming.?soon|car.?cover/i.test(u)) score -= 200;
   if (/logo|icon|favicon|badge|emblem|sprite|banner|header.?bg/i.test(u)) score -= 50;
   if (/[_\-](16|24|32|48|64)x\d|[wh]=(?:16|24|32|48|64|80|100)(?:[^0-9]|$)/i.test(u)) score -= 40;
   if (/\.(svg|gif|ico)/i.test(u.split('?')[0])) score -= 200;
