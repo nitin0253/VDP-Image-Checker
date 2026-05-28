@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
-  const { url } = req.query;
+  const { url, vin } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing url param' });
 
   let targetUrl;
@@ -61,7 +61,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ image: null, placeholder: false, error: errMsg, httpStatus: lastStatus });
   }
 
-  const result = extractHeroImage(html, targetUrl.href);
+  let result = extractHeroImage(html, targetUrl.href);
+
+  // VIN validation: if VIN provided and extracted image doesn't contain the VIN,
+  // try to find a better image that does contain the VIN in its URL
+  if (vin && result.image && !result.image.toLowerCase().includes(vin.toLowerCase())) {
+    const vinResult = extractVinImage(html, targetUrl.href, vin);
+    if (vinResult) result = vinResult;
+  }
+
   return res.status(200).json(result);
 }
 
@@ -209,6 +217,37 @@ async function tryDirectImageExtraction(pageUrl, httpStatus) {
     }
   } catch {}
   return null;
+}
+
+// ── VIN-SPECIFIC IMAGE EXTRACTOR ────────────────────────────────
+// When a VIN is provided, try to find an image URL that contains the VIN
+function extractVinImage(html, pageUrl, vin) {
+  const vinLower = vin.toLowerCase();
+  const candidates = [];
+
+  // Search all image URLs in the page for the VIN
+  const urlPattern = /["'`](https?://[^"'`s]{10,}.(?:jpe?g|png|webp)[^"'`s]{0,200})["'`]/gi;
+  let m;
+  while ((m = urlPattern.exec(html)) !== null) {
+    const u = m[1];
+    if (u.toLowerCase().includes(vinLower) && isRealImage(u) && !isBrandLogoOrPlaceholder(u, null)) {
+      candidates.push({ url: resolveUrl(u, pageUrl), score: scoreImageUrl(u) + 50, source: 'vin-match' });
+    }
+  }
+
+  // Also check data-src attributes
+  const dataPat = /data-(?:src|lazy|original|image|photo)=["']([^"']{10,})["']/gi;
+  while ((m = dataPat.exec(html)) !== null) {
+    const u = resolveUrl(m[1], pageUrl);
+    if (u.toLowerCase().includes(vinLower) && isRealImage(u)) {
+      candidates.push({ url: u, score: scoreImageUrl(u) + 50, source: 'vin-data-attr' });
+    }
+  }
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  return { image: best.url, source: best.source, placeholder: false, score: best.score };
 }
 
 // ── MAIN EXTRACTOR ────────────────────────────────────────────────
