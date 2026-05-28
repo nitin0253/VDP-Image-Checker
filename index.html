@@ -626,78 +626,76 @@ async function pixelSimilarity(a, b){
   const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
   cv.width=S; cv.height=S;
 
-  // Get the best URL for canvas pixel reading
-  // Priority: Spyne CDN unsafe (no auth) > direct S3 > image proxy
   function getBestUrl(src){
-    if(!src) return {primary: src, fallback: null};
-
-    // Extract the S3 path from any Thumbor/proxy wrapper
-    let s3path = null;
-
-    // Pattern: ...unsafe/.../https://spyne-media.s3.amazonaws.com/...
-    const i1 = src.indexOf('https://spyne-media.s3');
-    if(i1 > 0) s3path = src.slice(i1);
-
-    // Pattern: ...unsafe/.../spyne-media/YYYY/file
-    const i2 = src.indexOf('/spyne-media/');
-    if(!s3path && i2 > 0) s3path = 'https://spyne-media.s3.amazonaws.com' + src.slice(i2);
-
-    // Pattern: already direct S3
-    if(!s3path && src.includes('spyne-media.s3')) s3path = src;
-
-    if(s3path){
-      // Use Spyne's public unsafe CDN as primary (no CORS issues, no auth needed)
-      // Extract just the path portion after the domain
-      const pathStart = s3path.indexOf('spyne-media.s3.amazonaws.com/');
-      const imgPath = pathStart >= 0 ? s3path.slice(pathStart + 'spyne-media.s3.amazonaws.com/'.length) : null;
-      const primary = imgPath
-        ? 'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3path
-        : s3path;
-      return { primary, fallback: '/api/image-proxy?url='+encodeURIComponent(s3path) };
-    }
-
-    // Non-Spyne URL — try direct first, then proxy
-    return { primary: src, fallback: '/api/image-proxy?url='+encodeURIComponent(src) };
+    if(!src) return {primary:src, fallback:null};
+    // Extract direct S3 path from any Thumbor wrapper
+    const i1=src.indexOf('https://spyne-media.s3');
+    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+    const i2=src.indexOf('/spyne-media/');
+    if(i2>0&&src.includes('media.spyneai.com')){ const s3='https://spyne-media.s3.amazonaws.com'+src.slice(i2); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+    if(src.includes('spyne-media.s3')){ return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)}; }
+    // Non-Spyne: try direct then proxy
+    return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
   }
 
   function tryLoad(url){
     return new Promise((res,rej)=>{
       const img=new Image(); img.crossOrigin='anonymous';
-      img.onload=()=>{
-        try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
-        catch(e){rej(new Error('canvas_tainted'));}
-      };
+      img.onload=()=>{try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}catch(e){rej(new Error('canvas_tainted'));}};
       img.onerror=()=>rej(new Error('load_fail'));
       img.src=url;
       setTimeout(()=>rej(new Error('timeout')),10000);
     });
   }
 
+  // Try to load image just for display check (no CORS needed)
+  function canLoad(url){
+    return new Promise(res=>{
+      const img=new Image();
+      img.onload=()=>res(true);
+      img.onerror=()=>res(false);
+      img.src=url;
+      setTimeout(()=>res(false),8000);
+    });
+  }
+
   async function loadPixels(src){
-    const {primary, fallback} = getBestUrl(src);
-    // Try primary URL
-    try{ return {data: await tryLoad(primary)}; }catch(e1){}
-    // Try fallback (image proxy)
-    if(fallback){
-      try{ return {data: await tryLoad(fallback), proxied:true}; }catch(e2){
-        return {data:null, error:'cors_blocked'};
-      }
-    }
-    return {data:null, error:'cors_blocked'};
+    const {primary,fallback}=getBestUrl(src);
+    try{ return {data:await tryLoad(primary)}; }catch{}
+    if(fallback){ try{ return {data:await tryLoad(fallback),proxied:true}; }catch{} }
+    // Both pixel attempts failed — check if image at least loads visually
+    const loaded=await canLoad(src);
+    return {data:null, visuallyLoaded:loaded, error:'cors_blocked'};
   }
 
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
-    if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'pixel_read_failed')};
 
-    const dA=rA.data, dB=rB.data;
+    // If both images loaded visually but pixels are blocked —
+    // use URL structure similarity as a fallback heuristic
+    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded){
+      // Normalize URLs to compare path structure
+      const normA=a.split('?')[0].replace(/^https?:\/\/[^/]+/,'').replace(/\d+/g,'N');
+      const normB=b.split('?')[0].replace(/^https?:\/\/[^/]+/,'').replace(/\d+/g,'N');
+      // Count matching path segments
+      const partsA=normA.split('/').filter(Boolean);
+      const partsB=normB.split('/').filter(Boolean);
+      const matches=partsA.filter((p,i)=>partsB[i]===p).length;
+      const similarity=Math.round(matches/Math.max(partsA.length,partsB.length)*100);
+      // Both loaded = real images exist. Path similarity gives rough match confidence.
+      // Flag as 'visual_only' so user knows pixels weren't compared
+      return {score:null, method:'visual_only', visualBoth:true,
+              note:'Both images loaded but CORS prevented pixel comparison'};
+    }
 
-    // Color dominance check — catches different-colored cars
+    if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
+
+    const dA=rA.data,dB=rB.data;
+
+    // Color dominance check
     function avgColor(d,x0,y0,x1,y1){
       let r=0,g=0,b=0,n=0;
-      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
-        const i=(y*S+x)*4; r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++;
-      }
+      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
       return[r/n,g/n,b/n];
     }
     const[aR,aG,aB]=avgColor(dA,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
@@ -705,17 +703,15 @@ async function pixelSimilarity(a, b){
     const colorDist=Math.sqrt((aR-bR)**2+(aG-bG)**2+(aB-bB)**2);
     if(colorDist>40) return{score:Math.max(0,Math.round(50-colorDist*.3)),method:'color_mismatch',colorDist:Math.round(colorDist)};
 
-    // Pixel diff — skip watermark areas
+    // Pixel diff
     const tS=Math.floor(S*.18),bS=Math.floor(S*.12),eS=Math.floor(S*.08);
     let diff=0,weight=0;
-    for(let y=tS;y<S-bS;y++){
-      for(let x=eS;x<S-eS;x++){
-        const i=(y*S+x)*4;
-        const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
-        const w=(y>S*.25&&y<S*.72&&x>S*.15&&x<S*.85)?3:1;
-        diff+=d*w; weight+=w*765;
-      }
-    }
+    for(let y=tS;y<S-bS;y++){for(let x=eS;x<S-eS;x++){
+      const i=(y*S+x)*4;
+      const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+      const w=(y>S*.25&&y<S*.72&&x>S*.15&&x<S*.85)?3:1;
+      diff+=d*w; weight+=w*765;
+    }}
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
     return{score:Math.round((1-diff/weight)*100),method,colorDist:Math.round(colorDist)};
   }catch(e){
@@ -786,8 +782,14 @@ async function processVdpResult(v,res){
   // Run pixel comparison
   const px=await pixelSimilarity(sp,img);
   if(px.score===null){
-    _results[v.vin].status='error';
-    _results[v.vin].method='pixel_fail:'+(px.error||'unknown');
+    if(px.method==='visual_only'){
+      // Both images loaded but CORS prevented pixel comparison — needs manual check
+      _results[v.vin].status='error';
+      _results[v.vin].method='Check manually — images loaded but cannot compare pixels';
+    } else {
+      _results[v.vin].status='error';
+      _results[v.vin].method='pixel_fail:'+(px.error||'unknown');
+    }
     return;
   }
 
@@ -886,6 +888,7 @@ function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
   const cu=(v.dealerVinId&&v.eid&&v.teamId)?'https://console.spyne.ai/inventory/v2/listings/'+v.dealerVinId+'?enterprise_id='+v.eid+'&team_id='+v.teamId:'';
   const bm={match:'<span class="status-badge s-match"><span class="s-dot"></span>Match</span>',mismatch:'<span class="status-badge s-mismatch"><span class="s-dot"></span>Mismatch</span>',pending:'<span class="status-badge s-pending"><span class="s-dot"></span>Pending</span>',checking:'<span class="status-badge s-checking"><span class="s-spin"></span>Checking…</span>',novdp:'<span class="status-badge s-novdp">No VDP</span>',error:'<span class="status-badge s-error" title="'+(r.method||'')+'" style="cursor:help;max-width:220px;overflow:hidden;text-overflow:ellipsis">⚠ '+(
+  r.method&&r.method.startsWith('Check manually')?'⚠ Check Manually':
   r.method==='load_fail'?'Image blocked (CORS)':
   r.method&&r.method.startsWith('pixel_fail')?'CORS blocked':
   r.method?r.method.slice(0,28):'Error'
