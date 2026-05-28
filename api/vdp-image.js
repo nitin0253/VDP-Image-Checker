@@ -88,8 +88,10 @@ function isBrandLogoOrPlaceholder(url, html) {
   const u = url.toLowerCase();
 
   if (/no.?image|no.?photo|coming.?soon|placeholder|default.?vehicle|stock.?photo|generic|unavailable/i.test(u)) return true;
-  if (/ccdce9f9|coming.soon/i.test(u)) return true;
+  if (/ccdce9f9|coming.?soon|comingsoon/i.test(u)) return true;
   if (html && /images\s+coming\s+soon/i.test(html)) return true;
+  // "Coming Soon" car cover images — solid blue/grey drape over the car
+  if (/coming.?soon|car.?cover|vehicle.?cover|under.?cover|unveil/i.test(u)) return true;
 
   // Logo filename patterns
   if (/\/(logo|logos|icon|favicon|badge|emblem|brand|seal|crest|manufacturer)[^/]*\.(png|jpg|jpeg|webp|svg)/i.test(u)) return true;
