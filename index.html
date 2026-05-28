@@ -626,49 +626,64 @@ async function pixelSimilarity(a, b){
   const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
   cv.width=S; cv.height=S;
 
-  // Resolve any Spyne URL to the best URL for canvas pixel reading
-  function resolveSpyneUrl(src){
-    if(!src) return src;
-    // Pattern 1: Thumbor wrapping full S3 URL
-    // media.spyneai.com/unsafe/.../https://spyne-media.s3...
-    const fullS3 = src.indexOf('https://spyne-media.s3');
-    if(fullS3 > 0) return src.slice(fullS3);
-    // Pattern 2: Thumbor wrapping path-only S3
-    // media.spyneai.com/unsafe/.../spyne-media/YYYY/file.jpg
-    const pathOnly = src.indexOf('/spyne-media/');
-    if(pathOnly > 0 && src.includes('media.spyneai.com'))
-      return 'https://spyne-media.s3.amazonaws.com' + src.slice(pathOnly);
-    // Pattern 3: Already direct S3
-    if(src.includes('spyne-media.s3')) return src;
-    // Anything else — use as-is
-    return src;
+  // Get the best URL for canvas pixel reading
+  // Priority: Spyne CDN unsafe (no auth) > direct S3 > image proxy
+  function getBestUrl(src){
+    if(!src) return {primary: src, fallback: null};
+
+    // Extract the S3 path from any Thumbor/proxy wrapper
+    let s3path = null;
+
+    // Pattern: ...unsafe/.../https://spyne-media.s3.amazonaws.com/...
+    const i1 = src.indexOf('https://spyne-media.s3');
+    if(i1 > 0) s3path = src.slice(i1);
+
+    // Pattern: ...unsafe/.../spyne-media/YYYY/file
+    const i2 = src.indexOf('/spyne-media/');
+    if(!s3path && i2 > 0) s3path = 'https://spyne-media.s3.amazonaws.com' + src.slice(i2);
+
+    // Pattern: already direct S3
+    if(!s3path && src.includes('spyne-media.s3')) s3path = src;
+
+    if(s3path){
+      // Use Spyne's public unsafe CDN as primary (no CORS issues, no auth needed)
+      // Extract just the path portion after the domain
+      const pathStart = s3path.indexOf('spyne-media.s3.amazonaws.com/');
+      const imgPath = pathStart >= 0 ? s3path.slice(pathStart + 'spyne-media.s3.amazonaws.com/'.length) : null;
+      const primary = imgPath
+        ? 'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3path
+        : s3path;
+      return { primary, fallback: '/api/image-proxy?url='+encodeURIComponent(s3path) };
+    }
+
+    // Non-Spyne URL — try direct first, then proxy
+    return { primary: src, fallback: '/api/image-proxy?url='+encodeURIComponent(src) };
   }
 
-  function tryLoad(url, useProxy){
-    const loadUrl = useProxy ? '/api/image-proxy?url='+encodeURIComponent(url) : url;
+  function tryLoad(url){
     return new Promise((res,rej)=>{
       const img=new Image(); img.crossOrigin='anonymous';
       img.onload=()=>{
         try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
-        catch(e){rej(e);}
+        catch(e){rej(new Error('canvas_tainted'));}
       };
       img.onerror=()=>rej(new Error('load_fail'));
-      img.src=loadUrl;
+      img.src=url;
       setTimeout(()=>rej(new Error('timeout')),10000);
     });
   }
 
   async function loadPixels(src){
-    // Step 1: resolve to the best underlying URL
-    const resolved = resolveSpyneUrl(src);
-
-    // Step 2: try direct (works if CORS headers present)
-    try{ return {data: await tryLoad(resolved, false)}; }catch{}
-
-    // Step 3: route through our server proxy (bypasses CORS)
-    try{ return {data: await tryLoad(resolved, true), proxied:true}; }catch(e){
-      return {data:null, error:e.message};
+    const {primary, fallback} = getBestUrl(src);
+    // Try primary URL
+    try{ return {data: await tryLoad(primary)}; }catch(e1){}
+    // Try fallback (image proxy)
+    if(fallback){
+      try{ return {data: await tryLoad(fallback), proxied:true}; }catch(e2){
+        return {data:null, error:'cors_blocked'};
+      }
     }
+    return {data:null, error:'cors_blocked'};
   }
 
   try{
@@ -677,25 +692,22 @@ async function pixelSimilarity(a, b){
 
     const dA=rA.data, dB=rB.data;
 
-    // Color dominance check — catches different-colored cars immediately
-    function avgColor(d, x0,y0,x1,y1){
+    // Color dominance check — catches different-colored cars
+    function avgColor(d,x0,y0,x1,y1){
       let r=0,g=0,b=0,n=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
         const i=(y*S+x)*4; r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++;
       }
-      return [r/n,g/n,b/n];
+      return[r/n,g/n,b/n];
     }
-    const [aR,aG,aB]=avgColor(dA, Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
-    const [bR,bG,bB]=avgColor(dB, Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
+    const[aR,aG,aB]=avgColor(dA,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
+    const[bR,bG,bB]=avgColor(dB,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
     const colorDist=Math.sqrt((aR-bR)**2+(aG-bG)**2+(aB-bB)**2);
+    if(colorDist>40) return{score:Math.max(0,Math.round(50-colorDist*.3)),method:'color_mismatch',colorDist:Math.round(colorDist)};
 
-    if(colorDist>40){
-      return{score:Math.max(0,Math.round(50-colorDist*0.3)), method:'color_mismatch', colorDist:Math.round(colorDist)};
-    }
-
-    // Pixel similarity — skip watermark areas (top 18%, bottom 12%, sides 8%)
-    const tS=Math.floor(S*.18), bS=Math.floor(S*.12), eS=Math.floor(S*.08);
-    let diff=0, weight=0;
+    // Pixel diff — skip watermark areas
+    const tS=Math.floor(S*.18),bS=Math.floor(S*.12),eS=Math.floor(S*.08);
+    let diff=0,weight=0;
     for(let y=tS;y<S-bS;y++){
       for(let x=eS;x<S-eS;x++){
         const i=(y*S+x)*4;
@@ -705,7 +717,7 @@ async function pixelSimilarity(a, b){
       }
     }
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
-    return{score:Math.round((1-diff/weight)*100), method, colorDist:Math.round(colorDist)};
+    return{score:Math.round((1-diff/weight)*100),method,colorDist:Math.round(colorDist)};
   }catch(e){
     return{score:null,error:e.message};
   }
@@ -782,11 +794,16 @@ async function processVdpResult(v,res){
   _results[v.vin].score=px.score;
   _results[v.vin].method=(px.method||'pixel')+(px.colorDist!=null?' cd:'+px.colorDist:'');
 
-  if(px.score>=82){
+  // color_mismatch means different-colored cars — always mismatch regardless of score
+  if(px.method==='color_mismatch'){
+    _results[v.vin].status='mismatch';
+  } else if(px.score>=75){
+    // 75% threshold — same car through different CDNs/compressions typically scores 78-95%
     _results[v.vin].status='match';
-  } else if(px.score>=50){
+  } else if(px.score>=40){
     _results[v.vin].status='mismatch';
   } else {
+    // Very low — likely brand logo or wrong image
     _results[v.vin].status='placeholder';
     _results[v.vin].method='low_similarity_'+px.score+'pct_likely_placeholder';
   }
