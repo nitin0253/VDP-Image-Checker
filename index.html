@@ -120,9 +120,9 @@ tbody tr:hover{background:var(--card2)}
 td{padding:9px 12px;color:var(--t2);vertical-align:middle}
 td:first-child{padding-left:16px}td:last-child{padding-right:16px}
 .img-cell{display:flex;align-items:center;gap:8px}
-.img-thumb{width:128px;height:92px;object-fit:cover;border-radius:6px;border:1px solid var(--rim);flex-shrink:0;background:var(--card2);cursor:pointer;transition:transform .15s}
+.img-thumb{width:160px;height:115px;object-fit:cover;border-radius:6px;border:1px solid var(--rim);flex-shrink:0;background:var(--card2);cursor:pointer;transition:transform .15s}
 .img-thumb:hover{transform:scale(1.06)}
-.img-missing{width:128px;height:92px;border-radius:6px;border:1px dashed var(--rim2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--t3);background:var(--card2)}
+.img-missing{width:160px;height:115px;border-radius:6px;border:1px dashed var(--rim2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--t3);background:var(--card2)}
 .status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600;white-space:nowrap}
 .s-match{background:rgba(0,200,150,.12);border:1px solid rgba(0,200,150,.3);color:var(--green)}
 .s-mismatch{background:rgba(240,81,110,.1);border:1px solid rgba(240,81,110,.3);color:var(--red)}
@@ -139,15 +139,15 @@ td:first-child{padding-left:16px}td:last-child{padding-right:16px}
 .link-pill:hover{border-color:var(--accent);color:var(--accent)}
 .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
 .lb-overlay.open{display:flex}
-.lb-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:24px;max-width:900px;width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;position:relative}
+.lb-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:24px;max-width:1200px;width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;position:relative}
 .lb-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:7px;border:1px solid var(--rim);background:var(--card2);color:var(--t2);display:grid;place-items:center;font-size:14px;cursor:pointer}
 .lb-close:hover{border-color:var(--red);color:var(--red)}
 .lb-title{font-size:14px;font-weight:700;margin-bottom:16px;padding-right:36px}
 .lb-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .lb-side{display:flex;flex-direction:column;gap:8px}
 .lb-side-label{font-size:10px;font-family:var(--f-mono);color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
-.lb-img{width:100%;aspect-ratio:4/3;object-fit:contain;border-radius:10px;border:1px solid var(--rim);background:var(--card2)}
-.lb-img-missing{width:100%;aspect-ratio:4/3;border-radius:10px;border:1px dashed var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--t3)}
+.lb-img{width:100%;aspect-ratio:16/9;object-fit:contain;border-radius:10px;border:1px solid var(--rim);background:var(--card2)}
+.lb-img-missing{width:100%;aspect-ratio:16/9;border-radius:10px;border:1px dashed var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--t3)}
 .lb-status{margin-top:12px;text-align:center}
 .lb-url{font-size:9px;font-family:var(--f-mono);color:var(--t3);word-break:break-all;margin-top:4px;padding:6px 8px;background:var(--card2);border-radius:6px;border:1px solid var(--rim)}
 .empty{text-align:center;padding:60px 20px;font-family:var(--f-mono);font-size:11px;color:var(--t3)}
@@ -280,8 +280,8 @@ canvas{display:none}
           <th style="min-width:140px">Enterprise</th>
           <th style="min-width:100px">Team</th>
           <th style="min-width:80px">Make/Model</th>
-          <th style="min-width:150px;text-align:center">Spyne Image</th>
-          <th style="min-width:150px;text-align:center">VDP Image</th>
+          <th style="min-width:180px;text-align:center">Spyne Image</th>
+          <th style="min-width:180px;text-align:center">VDP Image</th>
           <th style="min-width:110px;text-align:center">Status</th>
           <th style="min-width:80px;text-align:center">Similarity</th>
           <th style="min-width:100px">Links</th>
@@ -621,7 +621,7 @@ async function fetchVdpImage(url){
 }
 
 async function pixelSimilarity(a, b){
-  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=48;
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=64;
   cv.width=S; cv.height=S;
 
   function getBestUrl(src){
@@ -659,72 +659,58 @@ async function pixelSimilarity(a, b){
 
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
-
-    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded)
-      return {score:null, method:'visual_only'};
-    if(!rA.data||!rB.data) return{score:null, error:(rA.error||rB.error||'cors_blocked')};
+    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded) return{score:null,method:'visual_only'};
+    if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
 
     const dA=rA.data, dB=rB.data;
 
-    // ── Background-aware comparison ──────────────────────────────────
-    // Problem: same studio background inflates similarity scores
-    // Solution: compute pixel weight based on how much each pixel DIFFERS
-    // from the background (edge of image). Background pixels get low weight,
-    // car pixels get high weight.
-    //
-    // Background sample: average color of the outer ring of pixels
-    function getBgColor(d){
-      let r=0,g=0,b=0,n=0;
-      for(let x=0;x<S;x++){
-        // top row
-        let i=x*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
-        // bottom row
-        i=((S-1)*S+x)*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
-      }
-      for(let y=1;y<S-1;y++){
-        // left col
-        let i=y*S*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
-        // right col
-        i=(y*S+(S-1))*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
-      }
-      return [r/n,g/n,b/n];
+    // ── Coming Soon / placeholder detection ──────────────────────────
+    // Solid-color cover has very low variance in center
+    function centerVariance(d){
+      const x0=Math.floor(S*.25),x1=Math.floor(S*.75),y0=Math.floor(S*.30),y1=Math.floor(S*.75);
+      let rS=0,gS=0,bS=0,n=0;
+      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;rS+=d[i];gS+=d[i+1];bS+=d[i+2];n++;}
+      const rM=rS/n,gM=gS/n,bM=bS/n;
+      let v=0;
+      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;v+=Math.abs(d[i]-rM)+Math.abs(d[i+1]-gM)+Math.abs(d[i+2]-bM);}
+      return v/n;
     }
+    const varA=centerVariance(dA), varB=centerVariance(dB);
+    // Threshold 6 = only solid color covers (variance ~3-5), NOT dark cars (~20+)
+    if(varB<6) return{score:10, method:'placeholder_cover'};
+    if(varA<6) return{score:10, method:'placeholder_cover'};
 
-    const bgA=getBgColor(dA);
-    const bgB=getBgColor(dB);
-    // Use average of both backgrounds as reference
-    const bgR=(bgA[0]+bgB[0])/2, bgG=(bgA[1]+bgB[1])/2, bgB2=(bgA[2]+bgB[2])/2;
+    // ── Skip top 18% (watermark) and bottom 12% (banner) ────────────
+    const tS=Math.floor(S*.18), bS=Math.floor(S*.12);
 
-    // Skip top 20% (watermark), bottom 5%
-    const tS=Math.floor(S*.20), bS=Math.floor(S*.05);
-
+    // ── Pure pixel diff — no background weighting ────────────────────
+    // Background weighting was causing 69-70% for same-car images
+    // Use uniform comparison instead, which is more reliable
     let diff=0, weight=0;
     for(let y=tS;y<S-bS;y++){
       for(let x=0;x<S;x++){
         const i=(y*S+x)*4;
-
-        // How different is this pixel from the background? = car content weight
-        const carWeightA=Math.sqrt(
-          Math.pow(dA[i]-bgR,2)+Math.pow(dA[i+1]-bgG,2)+Math.pow(dA[i+2]-bgB2,2)
-        );
-        const carWeightB=Math.sqrt(
-          Math.pow(dB[i]-bgR,2)+Math.pow(dB[i+1]-bgG,2)+Math.pow(dB[i+2]-bgB2,2)
-        );
-        // Use max of both weights — if either image has car here, it matters
-        const carWeight=Math.max(carWeightA,carWeightB);
-
-        // Background pixels (weight < 10) still contribute but minimally
-        const w=Math.max(1, Math.round(carWeight/8));
-
-        const d2=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
-        diff+=d2*w; weight+=w*765;
+        const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+        diff+=d; weight+=765;
       }
     }
+    const rawScore=Math.round((1-diff/weight)*100);
+
+    // ── Normalize score to our display scale ─────────────────────────
+    // Raw 100% = perfect identical pixels = display 100%
+    // Raw ~88-95% = same car, minor banner/compression = display 92-98%
+    // Raw ~75-87% = same car different angle/crop = display 80-91%
+    // Raw ~50-74% = clearly different car = display < 75%
+    // Normalize: expand 80-100 range into 85-100 display range
+    let displayScore = rawScore;
+    if(rawScore >= 95) displayScore = 100;
+    else if(rawScore >= 80) displayScore = Math.round(85 + (rawScore - 80) * 1.0);
+    // Below 80 stays as-is
 
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
-    return{score:Math.round((1-diff/weight)*100), method};
+    return{score:displayScore, rawScore, method};
   }catch(e){
-    return{score:null, error:e.message};
+    return{score:null,error:e.message};
   }
 }
 
@@ -806,8 +792,21 @@ async function processVdpResult(v,res){
   _results[v.vin].method=(px.method||'pixel')+(px.colorDist!=null?' cd:'+px.colorDist:'');
 
   // color_mismatch means different-colored cars — always mismatch regardless of score
-  // Pure threshold: >=75% = match, <75% = mismatch
-  if(px.score>=75){
+  if(px.method==='placeholder_detected'){
+    _results[v.vin].status='placeholder';
+    _results[v.vin].method='VDP shows placeholder/coming soon';
+    _results[v.vin].score=null;
+    return;
+  }
+  // placeholder_cover = Coming Soon drape
+  if(px.method==='placeholder_cover'){
+    _results[v.vin].status='placeholder';
+    _results[v.vin].method='VDP shows placeholder/coming soon';
+    _results[v.vin].score=null;
+    return;
+  }
+  // Threshold: >=85% = Match (handles banner ~8% penalty, compression ~4%)
+  if(px.score>=85){
     _results[v.vin].status='match';
   } else {
     _results[v.vin].status='mismatch';
@@ -897,7 +896,12 @@ function rowHTML(v,i){
   r.method?r.method.slice(0,28):'Error'
 )+'</span>',placeholder:'<span class="status-badge" style="background:rgba(45,212,207,.1);border:1px solid rgba(45,212,207,.3);color:#2dd4cf;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:10px;font-family:var(--f-mono);font-weight:600" title="'+(r.method||'')+'">🖼 '+(r.method&&r.method.includes('low_sim')?'Wrong Image':(r.method&&r.method.includes('logo')?'Not Live':'No Photo'))+'</span>'};
   let sh='—';
-  if(r.score!==null){const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+r.score+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+r.score+'%</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+(r.method==='url'?'url':'px')+'</span></div>';}
+  if(r.score!==null){
+    const col=r.score>=85?'var(--green)':r.score>=60?'var(--amber)':'var(--red)';
+    const pct=r.score>=100?'100%':r.score+'%';
+    const lbl=r.method==='url_match'?'url':r.method&&r.method.includes('proxied')?'px*':'px';
+    sh='<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:'+Math.min(r.score,100)+'%;background:'+col+'"></div></div><span style="font-family:var(--f-mono);font-size:10px;color:'+col+'">'+pct+'</span><span style="font-size:8px;color:var(--t3);font-family:var(--f-mono)">'+lbl+'</span></div>';
+  }
   const idx=_vins.indexOf(v); const la='onclick="openLbIdx('+idx+')" style="cursor:pointer"';
   const spyneSrc=v.spyneImg||'';
   const sc=spyneSrc
