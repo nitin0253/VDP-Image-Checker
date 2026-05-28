@@ -220,34 +220,45 @@ async function tryDirectImageExtraction(pageUrl, httpStatus) {
 }
 
 // ── VIN-SPECIFIC IMAGE EXTRACTOR ────────────────────────────────
-// When a VIN is provided, try to find an image URL that contains the VIN
 function extractVinImage(html, pageUrl, vin) {
   const vinLower = vin.toLowerCase();
   const candidates = [];
+  let pos = 0;
 
-  // Search all image URLs in the page for the VIN
-  const urlPattern = /["'`](https?://[^"'`s]{10,}.(?:jpe?g|png|webp)[^"'`s]{0,200})["'`]/gi;
-  let m;
-  while ((m = urlPattern.exec(html)) !== null) {
-    const u = m[1];
-    if (u.toLowerCase().includes(vinLower) && isRealImage(u) && !isBrandLogoOrPlaceholder(u, null)) {
-      candidates.push({ url: resolveUrl(u, pageUrl), score: scoreImageUrl(u) + 50, source: 'vin-match' });
+  // Search for the VIN in the HTML, then find surrounding image URLs
+  while (pos < html.length) {
+    const vinPos = html.toLowerCase().indexOf(vinLower, pos);
+    if (vinPos === -1) break;
+
+    // Look back up to 300 chars for an https:// URL start
+    const lookBack = Math.max(0, vinPos - 300);
+    const segment = html.slice(lookBack, vinPos + vin.length + 50);
+    const httpIdx = segment.lastIndexOf('https://');
+    if (httpIdx >= 0) {
+      const urlSegment = segment.slice(httpIdx);
+      const endIdx = urlSegment.search(/["'\s<>\`]/);
+      const u = endIdx > 0 ? urlSegment.slice(0, endIdx) : urlSegment.slice(0, 200);
+      const cleaned = u.replace(/[,;)]+$/, '');
+      if (isRealImage(cleaned) && !isBrandLogoOrPlaceholder(cleaned, null)) {
+        candidates.push({ url: resolveUrl(cleaned, pageUrl), score: scoreImageUrl(cleaned) + 50, source: 'vin-match' });
+      }
     }
+    pos = vinPos + 1;
   }
 
-  // Also check data-src attributes
-  const dataPat = /data-(?:src|lazy|original|image|photo)=["']([^"']{10,})["']/gi;
-  while ((m = dataPat.exec(html)) !== null) {
-    const u = resolveUrl(m[1], pageUrl);
-    if (u.toLowerCase().includes(vinLower) && isRealImage(u)) {
-      candidates.push({ url: u, score: scoreImageUrl(u) + 50, source: 'vin-data-attr' });
+  // Also check data-src attributes for VIN
+  const dataSrcPat = /data-(?:src|lazy|original)="([^"]+)"/g;
+  let m;
+  while ((m = dataSrcPat.exec(html)) !== null) {
+    if (m[1].toLowerCase().includes(vinLower) && isRealImage(m[1])) {
+      candidates.push({ url: resolveUrl(m[1], pageUrl), score: scoreImageUrl(m[1]) + 50, source: 'vin-data-src' });
     }
   }
 
   if (!candidates.length) return null;
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
-  return { image: best.url, source: best.source, placeholder: false, score: best.score };
+  return { image: best.url, source: best.source, placeholder: false };
 }
 
 // ── MAIN EXTRACTOR ────────────────────────────────────────────────
