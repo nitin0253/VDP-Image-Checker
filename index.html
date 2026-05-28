@@ -647,7 +647,13 @@ async function pixelSimilarity(a, b){
   }
 
   function canLoad(url){
-    return new Promise(res=>{const img=new Image();img.onload=()=>res(true);img.onerror=()=>res(false);img.src=url;setTimeout(()=>res(false),8000);});
+    return new Promise(res=>{
+      const img=new Image();
+      img.onload=()=>res(true);
+      img.onerror=()=>res(false);
+      img.src=url;
+      setTimeout(()=>res(false),8000);
+    });
   }
 
   async function loadPixels(src){
@@ -663,60 +669,25 @@ async function pixelSimilarity(a, b){
 
     // Both visually loaded but pixel reads blocked
     if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded){
-      return {score:null, method:'visual_only', visualBoth:true};
+      return {score:null, method:'visual_only'};
     }
-    if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
+    if(!rA.data||!rB.data) return{score:null, error:(rA.error||rB.error||'cors_blocked')};
 
+    // Pure pixel diff — skip top 22% (watermark area), rest is compared
     const dA=rA.data, dB=rB.data;
-
-    // ── Detect "Coming Soon" / cover image ──────────────────────────
-    // These are solid blue/grey with text — very low color variance in center
-    function centerVariance(d){
-      const x0=Math.floor(S*.25),x1=Math.floor(S*.75),y0=Math.floor(S*.25),y1=Math.floor(S*.75);
-      let rSum=0,gSum=0,bSum=0,n=0;
-      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;rSum+=d[i];gSum+=d[i+1];bSum+=d[i+2];n++;}
-      const rM=rSum/n,gM=gSum/n,bM=bSum/n;
-      let v=0;
-      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;v+=Math.abs(d[i]-rM)+Math.abs(d[i+1]-gM)+Math.abs(d[i+2]-bM);}
-      return v/n; // avg deviation from mean — low = uniform color = placeholder
-    }
-    const varA=centerVariance(dA), varB=centerVariance(dB);
-    // If one image is very uniform (variance <15) = likely placeholder/coming soon
-    if(varA<15||varB<15) return{score:0, method:'placeholder_detected'};
-
-    // ── Color dominance check ────────────────────────────────────────
-    // Only flag as color_mismatch if difference is VERY large (>60)
-    // Dark grey vs dark black should NOT trigger this
-    function avgColor(d,x0,y0,x1,y1){
-      let r=0,g=0,b=0,n=0;
-      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
-      return[r/n,g/n,b/n];
-    }
-    const[aR,aG,aB]=avgColor(dA,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
-    const[bR,bG,bB]=avgColor(dB,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
-    const colorDist=Math.sqrt((aR-bR)**2+(aG-bG)**2+(aB-bB)**2);
-    // Raised threshold from 40 to 60 — dark grey vs dark blue/black was triggering falsely
-    if(colorDist>60) return{score:Math.max(0,Math.round(50-colorDist*.3)),method:'color_mismatch',colorDist:Math.round(colorDist)};
-
-    // ── Pixel similarity ─────────────────────────────────────────────
-    // Skip: top 20% (dealer logo watermark), bottom 10%, sides 5%
-    // The Bentley watermark is at TOP — skip more aggressively
-    const tS=Math.floor(S*.22), bS=Math.floor(S*.10), eS=Math.floor(S*.05);
+    const tS=Math.floor(S*.22);
     let diff=0, weight=0;
-    for(let y=tS;y<S-bS;y++){
-      for(let x=eS;x<S-eS;x++){
+    for(let y=tS;y<S;y++){
+      for(let x=0;x<S;x++){
         const i=(y*S+x)*4;
         const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
-        // Heavy center weight — car body is in middle 60%
-        const inCenter=(y>S*.30&&y<S*.80&&x>S*.15&&x<S*.85);
-        const w=inCenter?4:1;
-        diff+=d*w; weight+=w*765;
+        diff+=d; weight+=765;
       }
     }
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
-    return{score:Math.round((1-diff/weight)*100),method,colorDist:Math.round(colorDist)};
+    return{score:Math.round((1-diff/weight)*100), method};
   }catch(e){
-    return{score:null,error:e.message};
+    return{score:null, error:e.message};
   }
 }
 
@@ -798,23 +769,11 @@ async function processVdpResult(v,res){
   _results[v.vin].method=(px.method||'pixel')+(px.colorDist!=null?' cd:'+px.colorDist:'');
 
   // color_mismatch means different-colored cars — always mismatch regardless of score
-  if(px.method==='placeholder_detected'){
-    // One image is a "Coming Soon" / cover — mark as placeholder
-    _results[v.vin].status='placeholder';
-    _results[v.vin].method='VDP shows placeholder/coming soon image';
-    _results[v.vin].score=null;
-    return;
-  } else if(px.method==='color_mismatch'){
-    _results[v.vin].status='mismatch';
-  } else if(px.score>=75){
-    // 75% threshold — same car through different CDNs/compressions typically scores 78-95%
+  // Pure threshold: >=75% = match, <75% = mismatch
+  if(px.score>=75){
     _results[v.vin].status='match';
-  } else if(px.score>=40){
-    _results[v.vin].status='mismatch';
   } else {
-    // Very low — likely brand logo or wrong image
-    _results[v.vin].status='placeholder';
-    _results[v.vin].method='low_similarity_'+px.score+'pct_likely_placeholder';
+    _results[v.vin].status='mismatch';
   }
 }
 
