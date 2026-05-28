@@ -661,6 +661,9 @@ async function pixelSimilarity(a, b){
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
     if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded) return{score:null,method:'visual_only'};
+    // One side failed — if it loaded visually, mark as visual_only instead of error
+    if(!rA.data&&rA.visuallyLoaded) return{score:null,method:'visual_only'};
+    if(!rB.data&&rB.visuallyLoaded) return{score:null,method:'visual_only'};
     if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
 
     const dA=rA.data, dB=rB.data;
@@ -785,9 +788,8 @@ async function processVdpResult(v,res){
   const px=await pixelSimilarity(sp,img);
   if(px.score===null){
     if(px.method==='visual_only'){
-      // Both images loaded but CORS prevented pixel comparison — needs manual check
       _results[v.vin].status='error';
-      _results[v.vin].method='Check manually — images loaded but cannot compare pixels';
+      _results[v.vin].method='Check manually (CORS prevents pixel comparison)';
     } else {
       _results[v.vin].status='error';
       _results[v.vin].method='pixel_fail:'+(px.error||'unknown');
@@ -915,7 +917,10 @@ function rowHTML(v,i){
   const sc=spyneSrc
     ? '<div class="img-cell"><img class="img-thumb" src="'+spyneSrc+'" loading="lazy" '+la+' onerror="_imgErr(this)" data-src="'+spyneSrc.replace(/&/g,'&amp;')+'"></div>'
     : '<div class="img-cell"><div class="img-missing" '+la+'>📷</div></div>';
-  const vc=r.vdpImg?'<div class="img-cell"><img class="img-thumb" src="'+r.vdpImg+'" loading="lazy" '+la+'></div>':'<div class="img-cell"><div class="img-missing" '+la+' style="font-size:12px;color:var(--t3)">'+(r.status==='pending'||r.status==='checking'?'⏳':'—')+'</div></div>';
+  const vdpSrc=r.vdpImg||'';
+  const vc=vdpSrc
+    ? '<div class="img-cell"><img class="img-thumb" src="'+vdpSrc+'" loading="lazy" '+la+' onerror="_imgErr(this)" data-src="'+vdpSrc.replace(/&/g,'&amp;')+'"></div>'
+    : '<div class="img-cell"><div class="img-missing" '+la+' style="font-size:12px;color:var(--t3)">'+(r.status==='pending'||r.status==='checking'?'⏳':'—')+'</div></div>';
   return '<tr data-vin="'+v.vin+'"><td><div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-family:var(--f-mono);color:var(--t3)">'+(i+1)+'</span><span style="font-family:var(--f-mono);font-size:10px;color:var(--t1)">'+(v.vin||'—')+'</span></div></td><td style="font-size:11px">'+(v.entName||'—')+'</td><td style="font-size:10px;color:var(--t3)">'+(v.teamName||'—')+'</td><td style="font-size:10px">'+([v.year,v.make,v.model].filter(Boolean).join(' ')||'—')+'</td><td style="text-align:center">'+sc+'</td><td style="text-align:center">'+vc+'</td><td style="text-align:center">'+(bm[r.status]||bm.pending)+'</td><td>'+sh+'</td><td><div style="display:flex;gap:5px;flex-wrap:wrap">'+(v.vdpUrl?'<a class="link-pill" href="'+v.vdpUrl+'" target="_blank">VDP</a>':'')+(cu?'<a class="link-pill" href="'+cu+'" target="_blank">Console</a>':'')+'</div></td></tr>';
 }
 
