@@ -570,15 +570,15 @@ async function _fetchVins(en,tn){
     let vins=j.rows.map(r=>({vin:r.vin||r.vinName||'',dealerVinId:r.dealerVinId||'',eid:r.eid||r.enterpriseId||'',entName:r.entName||r.enterprise_name||'',teamId:r.teamId||'',teamName:r.teamName||r.team_name||'',make:r.make||'',model:r.model||'',year:r.year||'',spyneImg:(()=>{
         const t=r.thumbnail||r.thumbnail_url||'';
         if(!t) return '';
-        // Already a direct S3 URL — use as-is (covers outputThumbnailUrl from any Spyne bucket)
+        // Already direct S3 — use as-is
         if(t.startsWith('https://spyne-desktop-app.s3')||t.startsWith('https://spyne-media.s3')) return t;
-        // Thumbor wrapping full S3 URL
+        // Thumbor wrapping full S3 URL (e.g. .../https://spyne-media.s3.amazonaws.com/YYYY/file)
         const i1=t.indexOf('https://spyne-media.s3');
         if(i1>0) return t.slice(i1);
-        // Thumbor (unsafe or signed) wrapping path-only spyne-media/
+        // Thumbor wrapping path-only (e.g. .../spyne-media/YYYY/file)
+        // Strip the /spyne-media/ prefix — bucket name is not part of S3 object key
         const i2=t.indexOf('/spyne-media/');
-        if(i2>0) return 'https://spyne-media.s3.amazonaws.com'+t.slice(i2);
-        // Anything else — return as-is
+        if(i2>0) return 'https://spyne-media.s3.amazonaws.com/'+t.slice(i2+'/spyne-media/'.length);
         return t;
       })(),spyneImgDirect:(()=>{
         const t=r.thumbnail||r.thumbnail_url||'';
@@ -587,7 +587,7 @@ async function _fetchVins(en,tn){
         const i1=t.indexOf('https://spyne-media.s3');
         if(i1>0) return t.slice(i1);
         const i2=t.indexOf('/spyne-media/');
-        if(i2>0) return 'https://spyne-media.s3.amazonaws.com'+t.slice(i2);
+        if(i2>0) return 'https://spyne-media.s3.amazonaws.com/'+t.slice(i2+'/spyne-media/'.length);
         return t;
       })(),vdpUrl:r.vdpUrl||r.vdp_url||'',rb:r.rb||r.reason_bucket||''})).filter(v=>{if(!v.vin||seen.has(v.vin))return false;seen.add(v.vin);return true;});
     if(en&&en.length)vins=vins.filter(v=>en.includes(v.entName));
@@ -634,9 +634,9 @@ async function pixelSimilarity(a, b){
     // Thumbor with embedded full S3 URL
     const i1=src.indexOf('https://spyne-media.s3');
     if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/48x48/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
-    // Thumbor with path-only
+    // Thumbor with path-only (strip /spyne-media/ prefix from object key)
     const i2=src.indexOf('/spyne-media/');
-    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com'+src.slice(i2); return {primary:'https://media.spyneai.com/unsafe/48x48/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/48x48/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     // Non-Spyne (VDP image) — try direct then proxy
     return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
   }
