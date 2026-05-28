@@ -626,18 +626,12 @@ async function pixelSimilarity(a, b){
 
   function getBestUrl(src){
     if(!src) return {primary:src, fallback:null};
-    // Direct Spyne S3 URLs — use Spyne CDN for pixel read (avoids direct S3 CORS issues)
-    if(src.startsWith('https://spyne-desktop-app.s3'))
-      return {primary:'https://media.spyneai.com/unsafe/48x48/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
-    if(src.startsWith('https://spyne-media.s3'))
-      return {primary:'https://media.spyneai.com/unsafe/48x48/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
-    // Thumbor with embedded full S3 URL
+    if(src.startsWith('https://spyne-desktop-app.s3')||src.startsWith('https://spyne-media.s3'))
+      return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
     const i1=src.indexOf('https://spyne-media.s3');
-    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/48x48/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
-    // Thumbor with path-only (strip /spyne-media/ prefix from object key)
+    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     const i2=src.indexOf('/spyne-media/');
-    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/48x48/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
-    // Non-Spyne (VDP image) — try direct then proxy
+    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
   }
 
@@ -652,13 +646,7 @@ async function pixelSimilarity(a, b){
   }
 
   function canLoad(url){
-    return new Promise(res=>{
-      const img=new Image();
-      img.onload=()=>res(true);
-      img.onerror=()=>res(false);
-      img.src=url;
-      setTimeout(()=>res(false),8000);
-    });
+    return new Promise(res=>{const img=new Image();img.onload=()=>res(true);img.onerror=()=>res(false);img.src=url;setTimeout(()=>res(false),8000);});
   }
 
   async function loadPixels(src){
@@ -672,23 +660,67 @@ async function pixelSimilarity(a, b){
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
 
-    // Both visually loaded but pixel reads blocked
-    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded){
+    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded)
       return {score:null, method:'visual_only'};
-    }
     if(!rA.data||!rB.data) return{score:null, error:(rA.error||rB.error||'cors_blocked')};
 
-    // Pure pixel diff — skip top 22% (watermark area), rest is compared
     const dA=rA.data, dB=rB.data;
-    const tS=Math.floor(S*.22);
+
+    // ── Background-aware comparison ──────────────────────────────────
+    // Problem: same studio background inflates similarity scores
+    // Solution: compute pixel weight based on how much each pixel DIFFERS
+    // from the background (edge of image). Background pixels get low weight,
+    // car pixels get high weight.
+    //
+    // Background sample: average color of the outer ring of pixels
+    function getBgColor(d){
+      let r=0,g=0,b=0,n=0;
+      for(let x=0;x<S;x++){
+        // top row
+        let i=x*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
+        // bottom row
+        i=((S-1)*S+x)*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
+      }
+      for(let y=1;y<S-1;y++){
+        // left col
+        let i=y*S*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
+        // right col
+        i=(y*S+(S-1))*4; r+=d[i];g+=d[i+1];b+=d[i+2];n++;
+      }
+      return [r/n,g/n,b/n];
+    }
+
+    const bgA=getBgColor(dA);
+    const bgB=getBgColor(dB);
+    // Use average of both backgrounds as reference
+    const bgR=(bgA[0]+bgB[0])/2, bgG=(bgA[1]+bgB[1])/2, bgB2=(bgA[2]+bgB[2])/2;
+
+    // Skip top 20% (watermark), bottom 5%
+    const tS=Math.floor(S*.20), bS=Math.floor(S*.05);
+
     let diff=0, weight=0;
-    for(let y=tS;y<S;y++){
+    for(let y=tS;y<S-bS;y++){
       for(let x=0;x<S;x++){
         const i=(y*S+x)*4;
-        const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
-        diff+=d; weight+=765;
+
+        // How different is this pixel from the background? = car content weight
+        const carWeightA=Math.sqrt(
+          Math.pow(dA[i]-bgR,2)+Math.pow(dA[i+1]-bgG,2)+Math.pow(dA[i+2]-bgB2,2)
+        );
+        const carWeightB=Math.sqrt(
+          Math.pow(dB[i]-bgR,2)+Math.pow(dB[i+1]-bgG,2)+Math.pow(dB[i+2]-bgB2,2)
+        );
+        // Use max of both weights — if either image has car here, it matters
+        const carWeight=Math.max(carWeightA,carWeightB);
+
+        // Background pixels (weight < 10) still contribute but minimally
+        const w=Math.max(1, Math.round(carWeight/8));
+
+        const d2=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+        diff+=d2*w; weight+=w*765;
       }
     }
+
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
     return{score:Math.round((1-diff/weight)*100), method};
   }catch(e){
