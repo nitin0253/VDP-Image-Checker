@@ -608,10 +608,11 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('.sp-ms-wrap')){document.querySelectorAll('.sp-ms-dd.open').forEach(d=>d.classList.remove('open'));document.querySelectorAll('.sp-ms-trigger.open').forEach(t=>t.classList.remove('open'));}
 });
 
-async function fetchVdpImage(url){
+async function fetchVdpImage(url, vin){
   try{
     const sig=_runAbort?_runAbort.signal:AbortSignal.timeout(20000);
-    const r=await fetch(VDP_IMAGE_API+'?url='+encodeURIComponent(url),{signal:sig});
+    const vinParam=vin?'&vin='+encodeURIComponent(vin):'';
+    const r=await fetch(VDP_IMAGE_API+'?url='+encodeURIComponent(url)+vinParam,{signal:sig});
     if(!r.ok)return{image:null,error:'HTTP '+r.status};
     return await r.json();
   }catch(e){
@@ -720,7 +721,8 @@ async function pixelSimilarity(a, b){
 }
 
 const _dlh={};const _domain429={};let DG=1200,GG=100,MR=2,RD=3000;
-let _runAbort=null; // AbortController for current run
+let _runAbort=null;
+let _currentVin=''; // AbortController for current run
 function getDomain(u){try{return new URL(u).hostname;}catch{return u;}}
 async function waitForDomain(d){
   const gap=(_domain429[d]||0)>2?5000:DG; // 5s gap for sites that 429'd
@@ -733,7 +735,7 @@ async function fetchVdpImageWithRetry(url){
   for(let a=0;a<=MR;a++){
     if(a>0)await new Promise(r=>setTimeout(r,RD*a));
     await waitForDomain(d);
-    const res=await fetchVdpImage(url);
+    const res=await fetchVdpImage(url, _currentVin);
     if(res&&res.httpStatus===429){
       _domain429[d]=(_domain429[d]||0)+1; // track 429 count per domain
       if(a<MR)continue;
@@ -826,6 +828,7 @@ async function startCheck(){
   for(const v of tc){
     if(_stopFlag)break;
     _results[v.vin].status='checking';renderRow(v.vin);updateStats();
+    _currentVin=v.vin;
     try{const r=await fetchVdpImageWithRetry(v.vdpUrl);await processVdpResult(v,r);}catch(e){_results[v.vin].status='error';_results[v.vin].method=e.message;}
     done++;
     document.getElementById('prog-fill').style.width=Math.round(done/tc.length*100)+'%';
