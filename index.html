@@ -623,18 +623,16 @@ async function fetchVdpImage(url){
 }
 
 async function pixelSimilarity(a, b){
-  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=32;
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=48;
   cv.width=S; cv.height=S;
 
   function getBestUrl(src){
     if(!src) return {primary:src, fallback:null};
-    // Extract direct S3 path from any Thumbor wrapper
     const i1=src.indexOf('https://spyne-media.s3');
     if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     const i2=src.indexOf('/spyne-media/');
     if(i2>0&&src.includes('media.spyneai.com')){ const s3='https://spyne-media.s3.amazonaws.com'+src.slice(i2); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     if(src.includes('spyne-media.s3')){ return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)}; }
-    // Non-Spyne: try direct then proxy
     return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
   }
 
@@ -648,22 +646,14 @@ async function pixelSimilarity(a, b){
     });
   }
 
-  // Try to load image just for display check (no CORS needed)
   function canLoad(url){
-    return new Promise(res=>{
-      const img=new Image();
-      img.onload=()=>res(true);
-      img.onerror=()=>res(false);
-      img.src=url;
-      setTimeout(()=>res(false),8000);
-    });
+    return new Promise(res=>{const img=new Image();img.onload=()=>res(true);img.onerror=()=>res(false);img.src=url;setTimeout(()=>res(false),8000);});
   }
 
   async function loadPixels(src){
     const {primary,fallback}=getBestUrl(src);
     try{ return {data:await tryLoad(primary)}; }catch{}
     if(fallback){ try{ return {data:await tryLoad(fallback),proxied:true}; }catch{} }
-    // Both pixel attempts failed — check if image at least loads visually
     const loaded=await canLoad(src);
     return {data:null, visuallyLoaded:loaded, error:'cors_blocked'};
   }
@@ -671,28 +661,32 @@ async function pixelSimilarity(a, b){
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
 
-    // If both images loaded visually but pixels are blocked —
-    // use URL structure similarity as a fallback heuristic
+    // Both visually loaded but pixel reads blocked
     if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded){
-      // Normalize URLs to compare path structure
-      const normA=a.split('?')[0].replace(/^https?:\/\/[^/]+/,'').replace(/\d+/g,'N');
-      const normB=b.split('?')[0].replace(/^https?:\/\/[^/]+/,'').replace(/\d+/g,'N');
-      // Count matching path segments
-      const partsA=normA.split('/').filter(Boolean);
-      const partsB=normB.split('/').filter(Boolean);
-      const matches=partsA.filter((p,i)=>partsB[i]===p).length;
-      const similarity=Math.round(matches/Math.max(partsA.length,partsB.length)*100);
-      // Both loaded = real images exist. Path similarity gives rough match confidence.
-      // Flag as 'visual_only' so user knows pixels weren't compared
-      return {score:null, method:'visual_only', visualBoth:true,
-              note:'Both images loaded but CORS prevented pixel comparison'};
+      return {score:null, method:'visual_only', visualBoth:true};
     }
-
     if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
 
-    const dA=rA.data,dB=rB.data;
+    const dA=rA.data, dB=rB.data;
 
-    // Color dominance check
+    // ── Detect "Coming Soon" / cover image ──────────────────────────
+    // These are solid blue/grey with text — very low color variance in center
+    function centerVariance(d){
+      const x0=Math.floor(S*.25),x1=Math.floor(S*.75),y0=Math.floor(S*.25),y1=Math.floor(S*.75);
+      let rSum=0,gSum=0,bSum=0,n=0;
+      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;rSum+=d[i];gSum+=d[i+1];bSum+=d[i+2];n++;}
+      const rM=rSum/n,gM=gSum/n,bM=bSum/n;
+      let v=0;
+      for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;v+=Math.abs(d[i]-rM)+Math.abs(d[i+1]-gM)+Math.abs(d[i+2]-bM);}
+      return v/n; // avg deviation from mean — low = uniform color = placeholder
+    }
+    const varA=centerVariance(dA), varB=centerVariance(dB);
+    // If one image is very uniform (variance <15) = likely placeholder/coming soon
+    if(varA<15||varB<15) return{score:0, method:'placeholder_detected'};
+
+    // ── Color dominance check ────────────────────────────────────────
+    // Only flag as color_mismatch if difference is VERY large (>60)
+    // Dark grey vs dark black should NOT trigger this
     function avgColor(d,x0,y0,x1,y1){
       let r=0,g=0,b=0,n=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
@@ -701,17 +695,24 @@ async function pixelSimilarity(a, b){
     const[aR,aG,aB]=avgColor(dA,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
     const[bR,bG,bB]=avgColor(dB,Math.floor(S*.2),Math.floor(S*.25),Math.floor(S*.8),Math.floor(S*.7));
     const colorDist=Math.sqrt((aR-bR)**2+(aG-bG)**2+(aB-bB)**2);
-    if(colorDist>40) return{score:Math.max(0,Math.round(50-colorDist*.3)),method:'color_mismatch',colorDist:Math.round(colorDist)};
+    // Raised threshold from 40 to 60 — dark grey vs dark blue/black was triggering falsely
+    if(colorDist>60) return{score:Math.max(0,Math.round(50-colorDist*.3)),method:'color_mismatch',colorDist:Math.round(colorDist)};
 
-    // Pixel diff
-    const tS=Math.floor(S*.18),bS=Math.floor(S*.12),eS=Math.floor(S*.08);
-    let diff=0,weight=0;
-    for(let y=tS;y<S-bS;y++){for(let x=eS;x<S-eS;x++){
-      const i=(y*S+x)*4;
-      const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
-      const w=(y>S*.25&&y<S*.72&&x>S*.15&&x<S*.85)?3:1;
-      diff+=d*w; weight+=w*765;
-    }}
+    // ── Pixel similarity ─────────────────────────────────────────────
+    // Skip: top 20% (dealer logo watermark), bottom 10%, sides 5%
+    // The Bentley watermark is at TOP — skip more aggressively
+    const tS=Math.floor(S*.22), bS=Math.floor(S*.10), eS=Math.floor(S*.05);
+    let diff=0, weight=0;
+    for(let y=tS;y<S-bS;y++){
+      for(let x=eS;x<S-eS;x++){
+        const i=(y*S+x)*4;
+        const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
+        // Heavy center weight — car body is in middle 60%
+        const inCenter=(y>S*.30&&y<S*.80&&x>S*.15&&x<S*.85);
+        const w=inCenter?4:1;
+        diff+=d*w; weight+=w*765;
+      }
+    }
     const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
     return{score:Math.round((1-diff/weight)*100),method,colorDist:Math.round(colorDist)};
   }catch(e){
@@ -797,7 +798,13 @@ async function processVdpResult(v,res){
   _results[v.vin].method=(px.method||'pixel')+(px.colorDist!=null?' cd:'+px.colorDist:'');
 
   // color_mismatch means different-colored cars — always mismatch regardless of score
-  if(px.method==='color_mismatch'){
+  if(px.method==='placeholder_detected'){
+    // One image is a "Coming Soon" / cover — mark as placeholder
+    _results[v.vin].status='placeholder';
+    _results[v.vin].method='VDP shows placeholder/coming soon image';
+    _results[v.vin].score=null;
+    return;
+  } else if(px.method==='color_mismatch'){
     _results[v.vin].status='mismatch';
   } else if(px.score>=75){
     // 75% threshold — same car through different CDNs/compressions typically scores 78-95%
