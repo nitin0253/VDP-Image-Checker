@@ -139,15 +139,15 @@ td:first-child{padding-left:16px}td:last-child{padding-right:16px}
 .link-pill:hover{border-color:var(--accent);color:var(--accent)}
 .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
 .lb-overlay.open{display:flex}
-.lb-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:24px;max-width:1200px;width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;position:relative}
+.lb-card{background:var(--card);border:1px solid var(--rim);border-radius:20px;padding:28px;max-width:1500px;width:calc(100vw - 32px);max-height:calc(100vh - 32px);overflow:auto;position:relative}
 .lb-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:7px;border:1px solid var(--rim);background:var(--card2);color:var(--t2);display:grid;place-items:center;font-size:14px;cursor:pointer}
 .lb-close:hover{border-color:var(--red);color:var(--red)}
 .lb-title{font-size:14px;font-weight:700;margin-bottom:16px;padding-right:36px}
 .lb-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .lb-side{display:flex;flex-direction:column;gap:8px}
 .lb-side-label{font-size:10px;font-family:var(--f-mono);color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
-.lb-img{width:100%;aspect-ratio:16/9;object-fit:contain;border-radius:10px;border:1px solid var(--rim);background:var(--card2)}
-.lb-img-missing{width:100%;aspect-ratio:16/9;border-radius:10px;border:1px dashed var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--t3)}
+.lb-img{width:100%;height:420px;object-fit:contain;border-radius:10px;border:1px solid var(--rim);background:var(--card2)}
+.lb-img-missing{width:100%;height:420px;border-radius:10px;border:1px dashed var(--rim2);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--t3)}
 .lb-status{margin-top:12px;text-align:center}
 .lb-url{font-size:9px;font-family:var(--f-mono);color:var(--t3);word-break:break-all;margin-top:4px;padding:6px 8px;background:var(--card2);border-radius:6px;border:1px solid var(--rim)}
 .empty{text-align:center;padding:60px 20px;font-family:var(--f-mono);font-size:11px;color:var(--t3)}
@@ -621,17 +621,17 @@ async function fetchVdpImage(url){
 }
 
 async function pixelSimilarity(a, b){
-  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=64;
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=96;
   cv.width=S; cv.height=S;
 
   function getBestUrl(src){
     if(!src) return {primary:src, fallback:null};
     if(src.startsWith('https://spyne-desktop-app.s3')||src.startsWith('https://spyne-media.s3'))
-      return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
+      return {primary:'https://media.spyneai.com/unsafe/96x96/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
     const i1=src.indexOf('https://spyne-media.s3');
-    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/96x96/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     const i2=src.indexOf('/spyne-media/');
-    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/'+S+'x'+S+'/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/96x96/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
     return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
   }
 
@@ -665,20 +665,25 @@ async function pixelSimilarity(a, b){
     const dA=rA.data, dB=rB.data;
 
     // ── Coming Soon / placeholder detection ──────────────────────────
-    // Solid-color cover has very low variance in center
-    function centerVariance(d){
+    // Detect "Coming Soon" blue/teal car covers by checking:
+    // 1. Center region is dominated by blue/teal hue (not grey/white/black)
+    // 2. Very low variance (solid color) AND that color is blue/teal
+    // This avoids false positives for grey Bentley/dark car backgrounds
+    function isCoverImage(d){
       const x0=Math.floor(S*.25),x1=Math.floor(S*.75),y0=Math.floor(S*.30),y1=Math.floor(S*.75);
       let rS=0,gS=0,bS=0,n=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;rS+=d[i];gS+=d[i+1];bS+=d[i+2];n++;}
       const rM=rS/n,gM=gS/n,bM=bS/n;
       let v=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;v+=Math.abs(d[i]-rM)+Math.abs(d[i+1]-gM)+Math.abs(d[i+2]-bM);}
-      return v/n;
+      const variance=v/n;
+      // Must be BOTH low variance AND blue/teal dominant
+      // Blue: R<G, B>R, B>G roughly; Grey: R≈G≈B
+      const isBlueish=bM>rM+15&&bM>gM-10;
+      const isTealish=gM>rM+10&&bM>rM+10;
+      return variance<8&&(isBlueish||isTealish);
     }
-    const varA=centerVariance(dA), varB=centerVariance(dB);
-    // Threshold 6 = only solid color covers (variance ~3-5), NOT dark cars (~20+)
-    if(varB<6) return{score:10, method:'placeholder_cover'};
-    if(varA<6) return{score:10, method:'placeholder_cover'};
+    if(isCoverImage(dB)) return{score:10, method:'placeholder_cover'};
 
     // ── Skip top 18% (watermark) and bottom 12% (banner) ────────────
     const tS=Math.floor(S*.18), bS=Math.floor(S*.12);
