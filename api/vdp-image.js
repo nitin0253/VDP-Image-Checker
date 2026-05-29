@@ -45,7 +45,7 @@ export default async function handler(req, res) {
   for (let si = 0; si < strategies.length; si++) {
     try {
       if (si > 0) await sleep(300);
-      const response = await strategies_ref[si]();
+      const response = await strategies[si]();
       lastStatus = response.status;
       if (response.ok) {
         // Check if we got redirected to homepage (VDP no longer exists)
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
         }
         break;
       }
-      lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies_ref.length})`;
+      lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies.length})`;
       if (response.status === 429) { const ra = parseInt(response.headers.get('retry-after') || '5'); await sleep(Math.min(ra * 1000, 8000)); }
       if (response.status === 404 || response.status === 410) break;
     } catch (e) {
