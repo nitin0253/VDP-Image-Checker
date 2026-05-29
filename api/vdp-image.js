@@ -19,6 +19,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
+  // CF_WORKER env var: set to your Cloudflare Worker URL to bypass Vercel network blocks
+  // e.g. CF_WORKER=https://lively-glade-8921.nitin-kumar.workers.dev
+  const cfWorker = (typeof CF_WORKER !== 'undefined' && CF_WORKER) ? CF_WORKER : (process.env.CF_WORKER || '');
+
   const strategies = [
     () => fetch(targetUrl.href, { headers: BROWSER_HEADERS(targetUrl), redirect: 'follow', signal: AbortSignal.timeout(15000) }),
     () => fetch(targetUrl.href, {
@@ -28,6 +32,11 @@ export default async function handler(req, res) {
     () => fetch(targetUrl.href, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9' }, redirect: 'follow', signal: AbortSignal.timeout(15000) }),
     () => fetch(targetUrl.href, { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Referer': targetUrl.origin + '/' }, redirect: 'follow', signal: AbortSignal.timeout(15000) }),
     () => fetch(targetUrl.href, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }, redirect: 'follow', signal: AbortSignal.timeout(15000) }),
+    // Strategy 6: Route through Cloudflare Worker (bypasses Vercel network blocks)
+    ...(cfWorker ? [() => fetch(cfWorker + '?url=' + encodeURIComponent(targetUrl.href), {
+      headers: { 'Accept': 'text/html' },
+      signal: AbortSignal.timeout(20000)
+    })] : []),
   ];
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -36,10 +45,31 @@ export default async function handler(req, res) {
   for (let si = 0; si < strategies.length; si++) {
     try {
       if (si > 0) await sleep(300);
-      const response = await strategies[si]();
+      const response = await strategies_ref[si]();
       lastStatus = response.status;
-      if (response.ok) { html = await response.text(); break; }
-      lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies.length})`;
+      if (response.ok) {
+        // Check if we got redirected to homepage (VDP no longer exists)
+        const finalUrl = response.url || targetUrl.href;
+        const finalPath = new URL(finalUrl).pathname;
+        const origPath = targetUrl.pathname;
+        // If redirected to root/homepage (path much shorter than original), VDP is gone
+        if (finalPath !== origPath && (finalPath === '/' || finalPath === '' || finalPath.split('/').length < origPath.split('/').length - 2)) {
+          lastError = 'VDP no longer available (redirected to homepage)';
+          lastStatus = 301;
+          break;
+        }
+        html = await response.text();
+        // Also check if page content indicates "not found" / "sold" / "no longer available"
+        const snippet = html.slice(0, 3000).toLowerCase();
+        if (/could not find|no longer available|page not found|vehicle.*sold|this vehicle.*no longer/i.test(snippet)) {
+          lastError = 'VDP no longer available (vehicle sold or removed)';
+          lastStatus = 410;
+          html = null;
+          break;
+        }
+        break;
+      }
+      lastError = `HTTP ${response.status} (strategy ${si+1}/${strategies_ref.length})`;
       if (response.status === 429) { const ra = parseInt(response.headers.get('retry-after') || '5'); await sleep(Math.min(ra * 1000, 8000)); }
       if (response.status === 404 || response.status === 410) break;
     } catch (e) {
