@@ -307,6 +307,10 @@ canvas{display:none}
 
 <script>
 const API = '/api/data';
+// Cloudflare Worker proxy URL — set this after deploying cloudflare-image-proxy.js
+// Fixes CORS for domains Vercel blocks (e.g. bentleyatlanta.com)
+// Leave empty to skip CF proxy (falls back to Check Manually)
+const CF_PROXY = 'https://lively-glade-8921.nitin-kumar.workers.dev/proxy'; // Cloudflare Worker proxy
 const VDP_IMAGE_API = '/api/vdp-image';
 const ENT_API = '/api/enterprises';
 // Use VIN data CSV to build enterprise list — guarantees all enterprises are covered
@@ -625,55 +629,82 @@ async function pixelSimilarity(a, b){
   const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), S=96;
   cv.width=S; cv.height=S;
 
-  function getBestUrl(src){
-    if(!src) return {primary:src, fallback:null};
-    if(src.startsWith('https://spyne-desktop-app.s3')||src.startsWith('https://spyne-media.s3'))
-      return {primary:'https://media.spyneai.com/unsafe/96x96/'+src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
-    const i1=src.indexOf('https://spyne-media.s3');
-    if(i1>0){ const s3=src.slice(i1); return {primary:'https://media.spyneai.com/unsafe/96x96/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
+  // Resolve Spyne URL to direct S3 (no Thumbor wrapper)
+  function resolveSpyne(src){
+    if(!src) return src;
+    if(src.startsWith('https://spyne-desktop-app.s3')||src.startsWith('https://spyne-media.s3')) return src;
+    const i1=src.indexOf('https://spyne-media.s3'); if(i1>0) return src.slice(i1);
     const i2=src.indexOf('/spyne-media/');
-    if(i2>0&&(src.includes('media.spyneai.com')||src.includes('media.spyne.ai'))){ const s3='https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length); return {primary:'https://media.spyneai.com/unsafe/96x96/'+s3, fallback:'/api/image-proxy?url='+encodeURIComponent(s3)}; }
-    return {primary:src, fallback:'/api/image-proxy?url='+encodeURIComponent(src)};
+    if(i2>0) return 'https://spyne-media.s3.amazonaws.com/'+src.slice(i2+'/spyne-media/'.length);
+    return src;
   }
 
-  function tryLoad(url){
+  // Build all URL candidates to try for pixel reading (most reliable first)
+  function getCandidates(src){
+    const resolved = resolveSpyne(src);
+    const candidates = [];
+    // 1. Spyne CDN proxy (has CORS headers, always works for Spyne images)
+    if(resolved.includes('spyne-media.s3')||resolved.includes('spyne-desktop-app.s3')){
+      candidates.push('https://media.spyneai.com/unsafe/96x96/'+resolved);
+    }
+    // 2. Direct URL with CORS
+    candidates.push(resolved);
+    // 3. Our server proxy (works for most sites, fails for Vercel-blocked domains)
+    candidates.push('/api/image-proxy?url='+encodeURIComponent(resolved));
+    // 4. Cloudflare Worker proxy (works for domains Vercel blocks)
+    if(CF_PROXY) candidates.push(CF_PROXY+'?url='+encodeURIComponent(resolved));
+    return candidates;
+  }
+
+  function tryPixels(url){
     return new Promise((res,rej)=>{
       const img=new Image(); img.crossOrigin='anonymous';
-      img.onload=()=>{try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}catch(e){rej(new Error('canvas_tainted'));}};
+      img.onload=()=>{
+        try{ctx.clearRect(0,0,S,S);ctx.drawImage(img,0,0,S,S);res(ctx.getImageData(0,0,S,S).data);}
+        catch(e){rej(new Error('tainted'));}
+      };
       img.onerror=()=>rej(new Error('load_fail'));
       img.src=url;
-      setTimeout(()=>rej(new Error('timeout')),10000);
+      setTimeout(()=>rej(new Error('timeout')),8000);
     });
   }
 
   function canLoad(url){
-    return new Promise(res=>{const img=new Image();img.onload=()=>res(true);img.onerror=()=>res(false);img.src=url;setTimeout(()=>res(false),8000);});
+    return new Promise(res=>{
+      const img=new Image();
+      img.onload=()=>res(true); img.onerror=()=>res(false);
+      img.src=url; setTimeout(()=>res(false),6000);
+    });
   }
 
   async function loadPixels(src){
-    const {primary,fallback}=getBestUrl(src);
-    try{ return {data:await tryLoad(primary)}; }catch{}
-    if(fallback){ try{ return {data:await tryLoad(fallback),proxied:true}; }catch{} }
-    const loaded=await canLoad(src);
-    return {data:null, visuallyLoaded:loaded, error:'cors_blocked'};
+    for(const url of getCandidates(src)){
+      try{ return {data:await tryPixels(url), url}; }catch(e){}
+    }
+    // None worked for pixels — check if image at least loads visually
+    const visual = await canLoad(resolveSpyne(src));
+    return {data:null, visuallyLoaded:visual, error:'cors_blocked'};
   }
 
   try{
     const[rA,rB]=await Promise.all([loadPixels(a),loadPixels(b)]);
-    if(!rA.data&&!rB.data&&rA.visuallyLoaded&&rB.visuallyLoaded) return{score:null,method:'visual_only'};
-    // One side failed — if it loaded visually, mark as visual_only instead of error
+
+    if(!rA.data&&!rB.data){
+      if(rA.visuallyLoaded||rB.visuallyLoaded) return{score:null,method:'visual_only'};
+      return{score:null,error:(rA.error||rB.error||'cors_blocked')};
+    }
     if(!rA.data&&rA.visuallyLoaded) return{score:null,method:'visual_only'};
     if(!rB.data&&rB.visuallyLoaded) return{score:null,method:'visual_only'};
     if(!rA.data||!rB.data) return{score:null,error:(rA.error||rB.error||'cors_blocked')};
 
     const dA=rA.data, dB=rB.data;
 
-    // ── Coming Soon / placeholder detection ──────────────────────────
-    // Detect "Coming Soon" blue/teal car covers by checking:
-    // 1. Center region is dominated by blue/teal hue (not grey/white/black)
-    // 2. Very low variance (solid color) AND that color is blue/teal
-    // This avoids false positives for grey Bentley/dark car backgrounds
-    function isCoverImage(d){
+    // Coming Soon / car cover detection
+    function isCoverImage(d, imgUrl){
+      // URL-based detection (fastest, most reliable)
+      if(imgUrl && /coming.?soon|car.?cover|vehicle.?cover|unveil|comingsoon/i.test(imgUrl))
+        return true;
+      // Pixel-based: blue/teal dominant + low variance
       const x0=Math.floor(S*.25),x1=Math.floor(S*.75),y0=Math.floor(S*.30),y1=Math.floor(S*.75);
       let rS=0,gS=0,bS=0,n=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;rS+=d[i];gS+=d[i+1];bS+=d[i+2];n++;}
@@ -681,43 +712,28 @@ async function pixelSimilarity(a, b){
       let v=0;
       for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){const i=(y*S+x)*4;v+=Math.abs(d[i]-rM)+Math.abs(d[i+1]-gM)+Math.abs(d[i+2]-bM);}
       const variance=v/n;
-      // Must be BOTH low variance AND blue/teal dominant
-      // Blue: R<G, B>R, B>G roughly; Grey: R≈G≈B
-      const isBlueish=bM>rM+15&&bM>gM-10;
-      const isTealish=gM>rM+10&&bM>rM+10;
-      return variance<8&&(isBlueish||isTealish);
+      // Blue/teal check — Coming Soon covers are distinctly blue
+      const isBlueish=bM>rM+20&&bM>100;
+      const isTealish=gM>rM+15&&bM>rM+15&&bM>80;
+      // Higher variance threshold (15) to catch covers with text on them
+      return variance<15&&(isBlueish||isTealish);
     }
-    if(isCoverImage(dB)) return{score:10, method:'placeholder_cover'};
+    if(isCoverImage(dB, b)) return{score:10,method:'placeholder_cover'};
 
-    // ── Skip top 18% (watermark) and bottom 12% (banner) ────────────
-    const tS=Math.floor(S*.18), bS=Math.floor(S*.12);
-
-    // ── Pure pixel diff — no background weighting ────────────────────
-    // Background weighting was causing 69-70% for same-car images
-    // Use uniform comparison instead, which is more reliable
-    let diff=0, weight=0;
-    for(let y=tS;y<S-bS;y++){
+    // Pure pixel diff — skip top 18% (watermark)
+    const tS=Math.floor(S*.18);
+    let diff=0,weight=0;
+    for(let y=tS;y<S;y++){
       for(let x=0;x<S;x++){
         const i=(y*S+x)*4;
         const d=Math.abs(dA[i]-dB[i])+Math.abs(dA[i+1]-dB[i+1])+Math.abs(dA[i+2]-dB[i+2]);
         diff+=d; weight+=765;
       }
     }
-    const rawScore=Math.round((1-diff/weight)*100);
-
-    // ── Normalize score to our display scale ─────────────────────────
-    // Raw 100% = perfect identical pixels = display 100%
-    // Raw ~88-95% = same car, minor banner/compression = display 92-98%
-    // Raw ~75-87% = same car different angle/crop = display 80-91%
-    // Raw ~50-74% = clearly different car = display < 75%
-    // Normalize: expand 80-100 range into 85-100 display range
-    let displayScore = rawScore;
-    if(rawScore >= 95) displayScore = 100;
-    else if(rawScore >= 80) displayScore = Math.round(85 + (rawScore - 80) * 1.0);
-    // Below 80 stays as-is
-
-    const method=(rA.proxied||rB.proxied)?'pixel_proxied':'pixel';
-    return{score:displayScore, rawScore, method};
+    const raw=Math.round((1-diff/weight)*100);
+    const score=raw>=95?100:raw>=80?Math.round(85+(raw-80)*1.0):raw;
+    const method=(rA.url&&rA.url.includes('proxy'))||(rB.url&&rB.url.includes('proxy'))?'pixel_proxied':'pixel';
+    return{score,method};
   }catch(e){
     return{score:null,error:e.message};
   }
@@ -893,8 +909,17 @@ function renderRow(vin){
 function _imgErr(el){
   el.onerror=null;
   const src=el.getAttribute('data-src')||el.src;
-  if(src) el.src='/api/image-proxy?url='+encodeURIComponent(src);
-  else el.style.display='none';
+  if(!src){el.style.display='none';return;}
+  // Try Vercel proxy first, then CF proxy if available
+  if(!el.dataset.triedVercel){
+    el.dataset.triedVercel='1';
+    el.src='/api/image-proxy?url='+encodeURIComponent(src);
+  } else if(CF_PROXY&&!el.dataset.triedCf){
+    el.dataset.triedCf='1';
+    el.src=CF_PROXY+'?url='+encodeURIComponent(src);
+  } else {
+    el.style.opacity='0.3'; // show broken state subtly
+  }
 }
 function rowHTML(v,i){
   const r=_results[v.vin]||{status:'novdp',vdpImg:'',score:null};
